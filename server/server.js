@@ -73,17 +73,24 @@ io.on("connection", (socket) => {
 
       // Check if this is a scheduled meeting and set auto-end timer
       Meeting.findOne({ meetingId: roomId })
-        .then((meeting) => {
+        .then(async (meeting) => {
           if (
             meeting &&
             meeting.type === "scheduled" &&
             meeting.duration &&
             meeting.status !== "ended"
           ) {
-            // Calculate end time based on scheduled date/time + duration
-            const startTime = new Date(
-              `${meeting.scheduledDate}T${meeting.scheduledTime}`,
-            );
+            // Set startTime if not already set (meeting is actually starting now)
+            if (!meeting.startTime) {
+              await Meeting.findOneAndUpdate(
+                { meetingId: roomId },
+                { startTime: new Date() },
+              );
+            }
+
+            // Calculate end time based on actual startTime + duration
+            const updatedMeeting = await Meeting.findOne({ meetingId: roomId });
+            const startTime = updatedMeeting.startTime || new Date();
             const endTime = new Date(
               startTime.getTime() + meeting.duration * 60000,
             );
@@ -100,7 +107,10 @@ io.on("connection", (socket) => {
                 // Update meeting status in DB
                 await Meeting.findOneAndUpdate(
                   { meetingId: roomId },
-                  { status: "ended" },
+                  {
+                    status: "ended",
+                    endTime: new Date(),
+                  },
                 );
 
                 // Notify all users
