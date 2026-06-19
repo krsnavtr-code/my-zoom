@@ -5,6 +5,7 @@ import { Server } from "socket.io";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import authRoutes from "./routes/authRoutes.js";
+import meetingRoutes from "./routes/meetingRoutes.js";
 
 import dns from "dns";
 
@@ -29,6 +30,7 @@ mongoose
 
 // Use routes
 app.use("/api/auth", authRoutes);
+app.use("/api/meeting", meetingRoutes);
 
 // Socket.io setup for Real-time communication
 const io = new Server(server, {
@@ -38,31 +40,287 @@ const io = new Server(server, {
   },
 });
 
+// Room state management
+const rooms = new Map();
+
+// Chat message storage (in-memory for session)
+const chatMessages = new Map();
+
+// Meeting settings per room
+const meetingSettings = new Map();
+
 io.on("connection", (socket) => {
   console.log(`User connected: ${socket.id}`);
 
   // Room join logic
-  socket.on("join-room", (roomId, userId) => {
+  socket.on("join-room", (roomId, userId, userName) => {
     socket.join(roomId);
-    socket.to(roomId).emit("user-connected", userId);
+
+    // Initialize room if not exists
+    if (!rooms.has(roomId)) {
+      rooms.set(roomId, new Map());
+      // First user becomes host
+      meetingSettings.set(roomId, {
+        hostId: userId,
+        isLocked: false,
+        chatEnabled: true,
+        screenShareEnabled: true,
+      });
+    }
+
+    // Add user to room
+    rooms.get(roomId).set(userId, {
+      socketId: socket.id,
+      userName: userName || "Guest",
+      audioEnabled: true,
+      videoEnabled: true,
+      isScreenSharing: false,
+      handRaised: false,
+    });
+
+    // Get current users in room
+    const roomUsers = Array.from(rooms.get(roomId).keys()).filter(
+      (id) => id !== userId,
+    );
+
+    // Notify existing users
+    socket.to(roomId).emit("user-connected", { userId, userName });
+
+    // Send current users to new user
+    socket.emit("room-users", roomUsers);
+
+    // Send meeting settings to user
+    if (meetingSettings.has(roomId)) {
+      socket.emit("meeting-settings", meetingSettings.get(roomId));
+    }
 
     socket.on("disconnect", () => {
       socket.to(roomId).emit("user-disconnected", userId);
+      // Remove user from room state
+      if (rooms.has(roomId)) {
+        rooms.get(roomId).delete(userId);
+        // Clean up empty rooms
+        if (rooms.get(roomId).size === 0) {
+          rooms.delete(roomId);
+        }
+      }
     });
   });
 
   // WebRTC signaling
   socket.on("call-user", ({ userToCall, signalData, from }) => {
-    socket.to(userToCall).emit("call-user", { signal, callerId: from });
+    socket
+      .to(userToCall)
+      .emit("call-user", { signal: signalData, callerId: from });
   });
 
   socket.on("call-accepted", ({ signal, callId }) => {
     socket.to(callId).emit("call-accepted", { signal, callId });
   });
 
+  // ICE candidate exchange (for trickle ICE)
+  socket.on("ice-candidate", ({ candidate, to }) => {
+    socket.to(to).emit("ice-candidate", { candidate, from: socket.id });
+  });
+
+  // Audio state sync
+  socket.on("toggle-audio", ({ roomId, userId, audioEnabled }) => {
+    // Update room state
+    if (rooms.has(roomId)) {
+      const room = rooms.get(roomId);
+      if (room.has(userId)) {
+        room.get(userId).audioEnabled = audioEnabled;
+      }
+    }
+    // Broadcast to all users in room
+    socket.to(roomId).emit("user-audio-toggled", { userId, audioEnabled });
+  });
+
+  // Video state sync
+  socket.on("toggle-video", ({ roomId, userId, videoEnabled }) => {
+    // Update room state
+    if (rooms.has(roomId)) {
+      const room = rooms.get(roomId);
+      if (room.has(userId)) {
+        room.get(userId).videoEnabled = videoEnabled;
+      }
+    }
+    // Broadcast to all users in room
+    socket.to(roomId).emit("user-video-toggled", { userId, videoEnabled });
+  });
+
+  // Screen share state sync
+  socket.on("toggle-screen-share", ({ roomId, userId, isScreenSharing }) => {
+    // Update room state
+    if (rooms.has(roomId)) {
+      const room = rooms.get(roomId);
+      if (room.has(userId)) {
+        room.get(userId).isScreenSharing = isScreenSharing;
+      }
+    }
+    // Broadcast to all users in room
+    socket
+      .to(roomId)
+      .emit("user-screen-share-toggled", { userId, isScreenSharing });
+  });
+
+  // Leave room
   socket.on("leave-room", (roomId, userId) => {
     socket.leave(roomId);
     socket.to(roomId).emit("user-disconnected", userId);
+    // Remove user from room state
+    if (rooms.has(roomId)) {
+      rooms.get(roomId).delete(userId);
+      // Clean up empty rooms
+      if (rooms.get(roomId).size === 0) {
+        rooms.delete(roomId);
+      }
+    }
+  });
+
+  // Get room participants
+  socket.on("get-participants", (roomId) => {
+    if (rooms.has(roomId)) {
+      const participants = Array.from(rooms.get(roomId).entries()).map(
+        ([userId, data]) => ({
+          userId,
+          userName: data.userName,
+          audioEnabled: data.audioEnabled,
+          videoEnabled: data.videoEnabled,
+        }),
+      );
+      socket.emit("participants-list", participants);
+    }
+  });
+
+  // Chat messaging
+  socket.on("send-message", ({ roomId, userId, userName, message }) => {
+    const messageData = {
+      id: Date.now().toString(),
+      userId,
+      userName,
+      message,
+      timestamp: new Date().toISOString(),
+    };
+
+    // Store message in memory
+    if (!chatMessages.has(roomId)) {
+      chatMessages.set(roomId, []);
+    }
+    const roomMessages = chatMessages.get(roomId);
+    roomMessages.push(messageData);
+
+    // Keep only last 100 messages per room
+    if (roomMessages.length > 100) {
+      roomMessages.shift();
+    }
+
+    // Broadcast to all users in room
+    io.to(roomId).emit("receive-message", messageData);
+  });
+
+  // Get message history
+  socket.on("get-message-history", (roomId) => {
+    if (chatMessages.has(roomId)) {
+      socket.emit("message-history", chatMessages.get(roomId));
+    } else {
+      socket.emit("message-history", []);
+    }
+  });
+
+  // Raise hand
+  socket.on("raise-hand", ({ roomId, userId, isRaised }) => {
+    if (rooms.has(roomId)) {
+      const room = rooms.get(roomId);
+      if (room.has(userId)) {
+        room.get(userId).handRaised = isRaised;
+      }
+      // Notify host
+      if (meetingSettings.has(roomId)) {
+        const settings = meetingSettings.get(roomId);
+        const hostUser = room.get(settings.hostId);
+        if (hostUser) {
+          const hostSocket = io.sockets.sockets.get(hostUser.socketId);
+          if (hostSocket) {
+            hostSocket.emit("hand-raised", { userId, isRaised });
+          }
+        }
+      }
+      // Broadcast to all
+      io.to(roomId).emit("user-hand-raised", { userId, isRaised });
+    }
+  });
+
+  // Kick participant (host only)
+  socket.on("kick-participant", ({ roomId, hostId, participantId }) => {
+    if (meetingSettings.has(roomId)) {
+      const settings = meetingSettings.get(roomId);
+      if (settings.hostId === hostId && rooms.has(roomId)) {
+        const room = rooms.get(roomId);
+        const participant = room.get(participantId);
+        if (participant) {
+          // Notify kicked user
+          const participantSocket = io.sockets.sockets.get(
+            participant.socketId,
+          );
+          if (participantSocket) {
+            participantSocket.emit("kicked-from-room");
+            participantSocket.leave(roomId);
+          }
+          // Remove from room
+          room.delete(participantId);
+          // Notify all
+          io.to(roomId).emit("user-kicked", { userId: participantId });
+        }
+      }
+    }
+  });
+
+  // Lock meeting (host only)
+  socket.on("lock-meeting", ({ roomId, hostId, isLocked }) => {
+    if (meetingSettings.has(roomId)) {
+      const settings = meetingSettings.get(roomId);
+      if (settings.hostId === hostId) {
+        settings.isLocked = isLocked;
+        meetingSettings.set(roomId, settings);
+        // Broadcast to all
+        io.to(roomId).emit("meeting-locked", { isLocked });
+      }
+    }
+  });
+
+  // Mute all (host only)
+  socket.on("mute-all", ({ roomId, hostId }) => {
+    if (meetingSettings.has(roomId)) {
+      const settings = meetingSettings.get(roomId);
+      if (settings.hostId === hostId && rooms.has(roomId)) {
+        const room = rooms.get(roomId);
+        room.forEach((user, userId) => {
+          if (userId !== hostId) {
+            user.audioEnabled = false;
+            const userSocket = io.sockets.sockets.get(user.socketId);
+            if (userSocket) {
+              userSocket.emit("force-mute");
+            }
+          }
+        });
+        // Broadcast to all
+        io.to(roomId).emit("all-muted");
+      }
+    }
+  });
+
+  // Update meeting settings (host only)
+  socket.on("update-settings", ({ roomId, hostId, settings }) => {
+    if (meetingSettings.has(roomId)) {
+      const currentSettings = meetingSettings.get(roomId);
+      if (currentSettings.hostId === hostId) {
+        const updatedSettings = { ...currentSettings, ...settings };
+        meetingSettings.set(roomId, updatedSettings);
+        // Broadcast to all
+        io.to(roomId).emit("meeting-settings", updatedSettings);
+      }
+    }
   });
 });
 

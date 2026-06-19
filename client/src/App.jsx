@@ -4,6 +4,7 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
 import Room from "./pages/Room";
+import JoinForm from "./components/JoinForm";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 function App() {
@@ -20,6 +21,7 @@ function App() {
           </ProtectedRoute>
         }
       />
+      <Route path="/join/:id" element={<JoinForm />} />
       <Route path="/room/:id" element={<Room />} />
     </Routes>
   );

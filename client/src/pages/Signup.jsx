@@ -1,93 +1,125 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import axios from "axios";
 
 const Signup = () => {
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    password: '',
-    confirmPassword: ''
+    name: "",
+    email: "",
+    password: "",
+    confirmPassword: "",
   });
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleChange = (e) => {
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
+      [e.target.name]: e.target.value,
     });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError("");
 
     // Validate passwords match
     if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
+      setError("Passphrases do not match. Sync failed.");
       return;
     }
 
     // Validate password length
     if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters long');
+      setError("Passphrase must be at least 6 characters.");
       return;
     }
 
     setLoading(true);
 
     try {
-      const response = await axios.post('http://localhost:5000/api/auth/register', {
-        name: formData.name,
-        email: formData.email,
-        password: formData.password
-      });
-      
+      const response = await axios.post(
+        `${import.meta.env.VITE_API_URL}/api/auth/register`,
+        {
+          name: formData.name,
+          email: formData.email,
+          password: formData.password,
+        },
+      );
+
       // Store token and user data in localStorage
-      localStorage.setItem('token', response.data.token);
-      localStorage.setItem('user', JSON.stringify(response.data.user));
-      
+      localStorage.setItem("token", response.data.token);
+      localStorage.setItem("user", JSON.stringify(response.data.user));
+
       // Redirect to dashboard
-      navigate('/dashboard');
+      navigate("/dashboard");
     } catch (err) {
-      setError(err.response?.data?.message || 'Registration failed. Please try again.');
+      setError(
+        err.response?.data?.message || "Registration failed. Protocol aborted.",
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white flex items-center justify-center px-4 sm:px-6 lg:px-8 py-12">
-      <div className="max-w-md w-full">
+    <div className="min-h-screen bg-[#0a0a0f] text-slate-300 flex items-center justify-center px-4 relative overflow-hidden font-sans">
+      {/* Futuristic Background Grid & Glow */}
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:32px_32px] pointer-events-none" />
+      <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-cyan-900/20 blur-[120px] rounded-full pointer-events-none" />
+      <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-fuchsia-900/20 blur-[120px] rounded-full pointer-events-none" />
+
+      <div className="max-w-sm w-full relative z-10 py-8">
         {/* Logo */}
-        <div className="text-center mb-8">
-          <Link to="/" className="inline-flex items-center space-x-2">
-            <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center">
-              <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        <div className="text-center mb-6">
+          <Link
+            to="/"
+            className="inline-flex items-center space-x-2 drop-shadow-[0_0_10px_rgba(6,182,212,0.3)]"
+          >
+            <div className="w-10 h-10 bg-gradient-to-tr from-cyan-500 to-blue-600 rounded-lg flex items-center justify-center shadow-[0_0_10px_rgba(6,182,212,0.5)]">
+              <svg
+                className="w-6 h-6 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                />
               </svg>
             </div>
-            <span className="text-3xl font-bold text-blue-600">ZoomClone</span>
+            <span className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 tracking-tight">
+              ZoomClone
+            </span>
           </Link>
         </div>
 
-        {/* Signup Card */}
-        <div className="bg-white rounded-2xl shadow-xl p-8">
-          <h2 className="text-2xl font-bold text-gray-900 text-center mb-2">Create Account</h2>
-          <p className="text-gray-600 text-center mb-6">Join ZoomClone and start connecting today.</p>
+        {/* Cyberpunk Signup Card */}
+        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-[0_0_30px_rgba(0,0,0,0.8)]">
+          <h2 className="text-xl font-bold text-white text-center mb-1 tracking-tight">
+            System Registration
+          </h2>
+          <p className="text-slate-400 text-center text-xs mb-6">
+            Initialize new node in the network.
+          </p>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg mb-4">
+            <div className="bg-red-500/10 border border-red-500/50 text-red-400 px-4 py-2 rounded-xl text-sm mb-4 text-center">
               {error}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-3">
             <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-                Full Name
+              <label
+                htmlFor="name"
+                className="block text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-1"
+              >
+                Designation
               </label>
               <input
                 type="text"
@@ -96,14 +128,17 @@ const Signup = () => {
                 value={formData.name}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                placeholder="John Doe"
+                className="w-full bg-black/50 px-3 py-2 border border-slate-700 rounded-xl focus:ring-1 focus:ring-cyan-500 focus:border-cyan-500 outline-none text-cyan-50 placeholder-slate-600 text-sm transition-all"
+                placeholder="Operator Name"
               />
             </div>
 
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-                Email Address
+              <label
+                htmlFor="email"
+                className="block text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-1"
+              >
+                Identity Sequence (Email)
               </label>
               <input
                 type="email"
@@ -112,70 +147,99 @@ const Signup = () => {
                 value={formData.email}
                 onChange={handleChange}
                 required
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                placeholder="you@example.com"
+                className="w-full bg-black/50 px-3 py-2 border border-slate-700 rounded-xl focus:ring-1 focus:ring-cyan-500 focus:border-cyan-500 outline-none text-cyan-50 placeholder-slate-600 text-sm transition-all"
+                placeholder="user@network.local"
               />
             </div>
 
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                Password
-              </label>
-              <input
-                type="password"
-                id="password"
-                name="password"
-                value={formData.password}
-                onChange={handleChange}
-                required
-                minLength={6}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                placeholder="••••••••"
-              />
-              <p className="text-xs text-gray-500 mt-1">Must be at least 6 characters</p>
-            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label
+                  htmlFor="password"
+                  className="block text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-1"
+                >
+                  Passphrase
+                </label>
+                <input
+                  type="password"
+                  id="password"
+                  name="password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  required
+                  minLength={6}
+                  className="w-full bg-black/50 px-3 py-2 border border-slate-700 rounded-xl focus:ring-1 focus:ring-cyan-500 focus:border-cyan-500 outline-none text-cyan-50 placeholder-slate-600 text-sm transition-all"
+                  placeholder="••••••••"
+                />
+              </div>
 
-            <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
-                Confirm Password
-              </label>
-              <input
-                type="password"
-                id="confirmPassword"
-                name="confirmPassword"
-                value={formData.confirmPassword}
-                onChange={handleChange}
-                required
-                minLength={6}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                placeholder="••••••••"
-              />
+              <div>
+                <label
+                  htmlFor="confirmPassword"
+                  className="block text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-1"
+                >
+                  Verify
+                </label>
+                <input
+                  type="password"
+                  id="confirmPassword"
+                  name="confirmPassword"
+                  value={formData.confirmPassword}
+                  onChange={handleChange}
+                  required
+                  minLength={6}
+                  className="w-full bg-black/50 px-3 py-2 border border-slate-700 rounded-xl focus:ring-1 focus:ring-cyan-500 focus:border-cyan-500 outline-none text-cyan-50 placeholder-slate-600 text-sm transition-all"
+                  placeholder="••••••••"
+                />
+              </div>
             </div>
+            <p className="text-[10px] text-slate-500 mt-1 text-center">
+              Encryption requires a minimum of 6 characters.
+            </p>
 
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full mt-4 bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-2.5 rounded-xl hover:from-cyan-500 hover:to-blue-500 font-semibold text-sm transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)] disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
             >
-              {loading ? 'Creating account...' : 'Sign Up'}
+              {loading ? "Initializing..." : "Create Access Protocol"}
             </button>
           </form>
 
-          <div className="mt-6 text-center">
-            <p className="text-gray-600">
-              Already have an account?{' '}
-              <Link to="/login" className="text-blue-600 hover:text-blue-700 font-medium">
-                Sign in
+          <div className="mt-5 text-center">
+            <p className="text-slate-400 text-xs">
+              Already initialized?{" "}
+              <Link
+                to="/login"
+                className="text-cyan-400 hover:text-cyan-300 font-medium transition-colors"
+              >
+                Login
               </Link>
             </p>
           </div>
         </div>
 
-        <p className="text-center text-gray-500 mt-6 text-sm">
-          <Link to="/" className="hover:text-blue-600">
-            ← Back to Home
+        <div className="mt-6 text-center">
+          <Link
+            to="/"
+            className="text-slate-500 hover:text-cyan-400 text-xs transition-colors flex items-center justify-center gap-1"
+          >
+            <svg
+              className="w-3 h-3"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M10 19l-7-7m0 0l7-7m-7 7h18"
+              />
+            </svg>
+            Abort & Return
           </Link>
-        </p>
+        </div>
       </div>
     </div>
   );
