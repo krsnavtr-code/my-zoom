@@ -6,6 +6,7 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";
 import authRoutes from "./routes/authRoutes.js";
 import meetingRoutes from "./routes/meetingRoutes.js";
+import Meeting from "./models/Meeting.js";
 
 import dns from "dns";
 
@@ -46,6 +47,9 @@ const rooms = new Map();
 // Chat message storage (in-memory for session)
 const chatMessages = new Map();
 
+// Meeting timers for auto-end
+const meetingTimers = new Map();
+
 // Meeting settings per room
 const meetingSettings = new Map();
 
@@ -66,6 +70,73 @@ io.on("connection", (socket) => {
         chatEnabled: true,
         screenShareEnabled: true,
       });
+
+      // Check if this is a scheduled meeting and set auto-end timer
+      Meeting.findOne({ meetingId: roomId })
+        .then((meeting) => {
+          if (
+            meeting &&
+            meeting.type === "scheduled" &&
+            meeting.duration &&
+            meeting.status !== "ended"
+          ) {
+            // Calculate end time based on scheduled date/time + duration
+            const startTime = new Date(
+              `${meeting.scheduledDate}T${meeting.scheduledTime}`,
+            );
+            const endTime = new Date(
+              startTime.getTime() + meeting.duration * 60000,
+            );
+            const now = new Date();
+            const timeUntilEnd = endTime.getTime() - now.getTime();
+
+            if (timeUntilEnd > 0) {
+              // Set timer to auto-end meeting
+              const timer = setTimeout(async () => {
+                console.log(
+                  `Auto-ending meeting ${roomId} due to duration expiry`,
+                );
+
+                // Update meeting status in DB
+                await Meeting.findOneAndUpdate(
+                  { meetingId: roomId },
+                  { status: "ended" },
+                );
+
+                // Notify all users
+                io.to(roomId).emit("meeting-ended", {
+                  roomId,
+                  reason: "duration_expired",
+                });
+
+                // Disconnect all users
+                if (rooms.has(roomId)) {
+                  const room = rooms.get(roomId);
+                  room.forEach((user) => {
+                    const userSocket = io.sockets.sockets.get(user.socketId);
+                    if (userSocket) {
+                      userSocket.leave(roomId);
+                    }
+                  });
+                  rooms.delete(roomId);
+                }
+
+                // Clear settings
+                if (meetingSettings.has(roomId)) {
+                  meetingSettings.delete(roomId);
+                }
+
+                // Clear timer
+                meetingTimers.delete(roomId);
+              }, timeUntilEnd);
+
+              meetingTimers.set(roomId, timer);
+            }
+          }
+        })
+        .catch((err) => {
+          console.error("Error checking meeting for auto-end:", err);
+        });
     }
 
     // Add user to room
@@ -247,7 +318,30 @@ io.on("connection", (socket) => {
         }
       }
       // Broadcast to all
-      io.to(roomId).emit("user-hand-raised", { userId, isRaised });
+      io.to(roomId).emit("hand-raised", { userId, isRaised });
+    }
+  });
+
+  // End meeting
+  socket.on("end-meeting", ({ roomId }) => {
+    // Notify all users in the room that meeting has ended
+    io.to(roomId).emit("meeting-ended", { roomId });
+
+    // Disconnect all users from the room
+    if (rooms.has(roomId)) {
+      const room = rooms.get(roomId);
+      room.forEach((user) => {
+        const userSocket = io.sockets.sockets.get(user.socketId);
+        if (userSocket) {
+          userSocket.leave(roomId);
+        }
+      });
+      rooms.delete(roomId);
+    }
+
+    // Clear meeting settings
+    if (meetingSettings.has(roomId)) {
+      meetingSettings.delete(roomId);
     }
   });
 

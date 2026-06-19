@@ -19,6 +19,9 @@ const Dashboard = () => {
   const [loadingMeetings, setLoadingMeetings] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
   const [copiedLink, setCopiedLink] = useState(null);
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
+  const [meetingToEnd, setMeetingToEnd] = useState(null);
+  const [meetingDetails, setMeetingDetails] = useState({});
   const navigate = useNavigate();
 
   // Generate 12-digit meeting ID
@@ -68,6 +71,76 @@ const Dashboard = () => {
     navigator.clipboard.writeText(link);
     setCopiedLink(meetingId);
     setTimeout(() => setCopiedLink(null), 2000);
+  };
+
+  const handleEndMeeting = async (meetingId) => {
+    setMeetingToEnd(meetingId);
+    setShowEndConfirm(true);
+  };
+
+  const confirmEndMeeting = async () => {
+    if (!meetingToEnd) return;
+
+    try {
+      await axios.put(
+        `${import.meta.env.VITE_API_URL}/api/meeting/end/${meetingToEnd}`,
+      );
+
+      // Refresh meetings list
+      const userData = localStorage.getItem("user");
+      if (userData) {
+        fetchUserMeetings(JSON.parse(userData).id);
+      }
+    } catch (error) {
+      console.error("Error ending meeting:", error);
+    } finally {
+      setShowEndConfirm(false);
+      setMeetingToEnd(null);
+    }
+  };
+
+  const handleStartNow = async (meetingId) => {
+    try {
+      await axios.put(
+        `${import.meta.env.VITE_API_URL}/api/meeting/update-schedule/${meetingId}`,
+      );
+
+      // Refresh meetings list
+      const userData = localStorage.getItem("user");
+      if (userData) {
+        fetchUserMeetings(JSON.parse(userData).id);
+      }
+
+      // Navigate to meeting
+      navigate(`/join/${meetingId}`);
+    } catch (error) {
+      console.error("Error starting meeting now:", error);
+      alert("Failed to start meeting. Please try again.");
+    }
+  };
+
+  const fetchMeetingDetails = async (meetingId) => {
+    if (meetingDetails[meetingId]) {
+      // Toggle hide
+      setMeetingDetails((prev) => {
+        const newDetails = { ...prev };
+        delete newDetails[meetingId];
+        return newDetails;
+      });
+      return;
+    }
+
+    try {
+      const response = await axios.get(
+        `${import.meta.env.VITE_API_URL}/api/meeting/details/${meetingId}`,
+      );
+      setMeetingDetails((prev) => ({
+        ...prev,
+        [meetingId]: response.data.meeting,
+      }));
+    } catch (error) {
+      console.error("Error fetching meeting details:", error);
+    }
   };
 
   const handleCreateMeeting = () => {
@@ -757,94 +830,163 @@ const Dashboard = () => {
                         </div>
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleCopyMeetingId(meeting.meetingId)}
-                        className="px-3 py-2 bg-white/5 border border-white/10 text-cyan-400 rounded-lg hover:bg-cyan-500/10 hover:border-cyan-500/50 text-xs font-medium transition-all flex items-center gap-1.5"
-                      >
-                        {copiedId === meeting.meetingId ? (
-                          <>
-                            <svg
-                              className="w-3 h-3"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M5 13l4 4L19 7"
-                              />
-                            </svg>
-                            Copied
-                          </>
-                        ) : (
-                          <>
-                            <svg
-                              className="w-3 h-3"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                              />
-                            </svg>
-                            Copy ID
-                          </>
+                    {meeting.status !== "ended" ? (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleCopyMeetingId(meeting.meetingId)}
+                          className="px-3 py-2 bg-white/5 border border-white/10 text-cyan-400 rounded-lg hover:bg-cyan-500/10 hover:border-cyan-500/50 text-xs font-medium transition-all flex items-center gap-1.5"
+                        >
+                          {copiedId === meeting.meetingId ? (
+                            <>
+                              <svg
+                                className="w-3 h-3"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M5 13l4 4L19 7"
+                                />
+                              </svg>
+                              Copied
+                            </>
+                          ) : (
+                            <>
+                              <svg
+                                className="w-3 h-3"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                                />
+                              </svg>
+                              Copy ID
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() =>
+                            handleCopyMeetingLink(meeting.meetingId)
+                          }
+                          className="px-3 py-2 bg-white/5 border border-white/10 text-cyan-400 rounded-lg hover:bg-cyan-500/10 hover:border-cyan-500/50 text-xs font-medium transition-all flex items-center gap-1.5"
+                        >
+                          {copiedLink === meeting.meetingId ? (
+                            <>
+                              <svg
+                                className="w-3 h-3"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M5 13l4 4L19 7"
+                                />
+                              </svg>
+                              Copied
+                            </>
+                          ) : (
+                            <>
+                              <svg
+                                className="w-3 h-3"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                                />
+                              </svg>
+                              Copy Link
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() =>
+                            meeting.type === "scheduled" &&
+                            meeting.status !== "active"
+                              ? handleStartNow(meeting.meetingId)
+                              : navigate(`/join/${meeting.meetingId}`)
+                          }
+                          className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:from-cyan-500 hover:to-blue-500 text-xs font-medium transition-all shadow-[0_0_10px_rgba(6,182,212,0.3)]"
+                        >
+                          {meeting.type === "scheduled" &&
+                          meeting.status !== "active"
+                            ? "Start Now"
+                            : "Join"}
+                        </button>
+                        {meeting.status === "active" && (
+                          <button
+                            onClick={() => handleEndMeeting(meeting.meetingId)}
+                            className="px-3 py-2 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg hover:bg-red-500/20 hover:border-red-500 text-xs font-medium transition-all"
+                          >
+                            End
+                          </button>
                         )}
-                      </button>
-                      <button
-                        onClick={() => handleCopyMeetingLink(meeting.meetingId)}
-                        className="px-3 py-2 bg-white/5 border border-white/10 text-cyan-400 rounded-lg hover:bg-cyan-500/10 hover:border-cyan-500/50 text-xs font-medium transition-all flex items-center gap-1.5"
-                      >
-                        {copiedLink === meeting.meetingId ? (
-                          <>
-                            <svg
-                              className="w-3 h-3"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M5 13l4 4L19 7"
-                              />
-                            </svg>
-                            Copied
-                          </>
-                        ) : (
-                          <>
-                            <svg
-                              className="w-3 h-3"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
-                              />
-                            </svg>
-                            Copy Link
-                          </>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-slate-500">
+                        <div className="italic mb-2">Meeting ended</div>
+                        <button
+                          onClick={() => fetchMeetingDetails(meeting.meetingId)}
+                          className="text-cyan-400 hover:text-cyan-300 transition-colors"
+                        >
+                          {meetingDetails[meeting.meetingId]
+                            ? "Hide details"
+                            : "View details"}
+                        </button>
+                        {meetingDetails[meeting.meetingId] && (
+                          <div className="mt-2 space-y-1 text-slate-400">
+                            <div>
+                              •{" "}
+                              {meetingDetails[meeting.meetingId]
+                                .participantCount || 0}{" "}
+                              participants
+                            </div>
+                            {meetingDetails[meeting.meetingId]
+                              .actualDuration && (
+                              <div>
+                                • Duration:{" "}
+                                {
+                                  meetingDetails[meeting.meetingId]
+                                    .actualDuration
+                                }{" "}
+                                minutes
+                              </div>
+                            )}
+                            {meetingDetails[meeting.meetingId].startTime && (
+                              <div>
+                                • Started:{" "}
+                                {new Date(
+                                  meetingDetails[meeting.meetingId].startTime,
+                                ).toLocaleString()}
+                              </div>
+                            )}
+                            {meetingDetails[meeting.meetingId].endTime && (
+                              <div>
+                                • Ended:{" "}
+                                {new Date(
+                                  meetingDetails[meeting.meetingId].endTime,
+                                ).toLocaleString()}
+                              </div>
+                            )}
+                          </div>
                         )}
-                      </button>
-                      <button
-                        onClick={() => navigate(`/join/${meeting.meetingId}`)}
-                        className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:from-cyan-500 hover:to-blue-500 text-xs font-medium transition-all shadow-[0_0_10px_rgba(6,182,212,0.3)]"
-                      >
-                        Join
-                      </button>
-                    </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -852,6 +994,53 @@ const Dashboard = () => {
           </div>
         </div>
       </main>
+
+      {/* End Meeting Confirmation Modal */}
+      {showEndConfirm && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4 font-sans">
+          <div className="bg-[#0a0a0f]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.8)] max-w-sm w-full p-6 relative">
+            <div className="text-center mb-6">
+              <div className="w-12 h-12 bg-red-500/20 border border-red-500/50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg
+                  className="w-6 h-6 text-red-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                  />
+                </svg>
+              </div>
+              <h3 className="text-lg font-bold text-white mb-2">End Meeting</h3>
+              <p className="text-sm text-slate-400">
+                Are you sure you want to end this meeting for all participants?
+                This action cannot be undone.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowEndConfirm(false);
+                  setMeetingToEnd(null);
+                }}
+                className="flex-1 px-4 py-2 bg-white/5 border border-white/10 text-slate-300 rounded-xl hover:bg-white/10 text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmEndMeeting}
+                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 text-sm font-semibold transition-all shadow-[0_0_15px_rgba(239,68,68,0.4)]"
+              >
+                End Meeting
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

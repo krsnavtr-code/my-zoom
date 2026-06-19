@@ -106,6 +106,7 @@ router.post("/create", async (req, res) => {
       duration,
       password,
       status: type === "instant" ? "active" : "scheduled",
+      startTime: type === "instant" ? new Date() : null,
     });
 
     await meeting.save();
@@ -140,6 +141,123 @@ router.get("/user/:userId", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error fetching user meetings",
+    });
+  }
+});
+
+// End meeting
+router.put("/end/:meetingId", async (req, res) => {
+  try {
+    const meeting = await Meeting.findOne({
+      meetingId: req.params.meetingId,
+    });
+
+    if (!meeting) {
+      return res.status(404).json({
+        success: false,
+        message: "Meeting not found",
+      });
+    }
+
+    meeting.status = "ended";
+    meeting.endTime = new Date();
+    if (!meeting.startTime) {
+      meeting.startTime = meeting.createdAt;
+    }
+    await meeting.save();
+
+    res.json({
+      success: true,
+      message: "Meeting ended successfully",
+    });
+  } catch (error) {
+    console.error("Error ending meeting:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error ending meeting",
+    });
+  }
+});
+
+// Update meeting schedule (for starting scheduled meetings early)
+router.put("/update-schedule/:meetingId", async (req, res) => {
+  try {
+    const meeting = await Meeting.findOne({
+      meetingId: req.params.meetingId,
+    });
+
+    if (!meeting) {
+      return res.status(404).json({
+        success: false,
+        message: "Meeting not found",
+      });
+    }
+
+    const now = new Date();
+    meeting.scheduledDate = now.toISOString().split("T")[0];
+    meeting.scheduledTime = now.toTimeString().slice(0, 5);
+    meeting.status = "active";
+    meeting.startTime = now;
+    await meeting.save();
+
+    res.json({
+      success: true,
+      message: "Meeting schedule updated successfully",
+      meeting: {
+        scheduledDate: meeting.scheduledDate,
+        scheduledTime: meeting.scheduledTime,
+        status: meeting.status,
+      },
+    });
+  } catch (error) {
+    console.error("Error updating meeting schedule:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error updating meeting schedule",
+    });
+  }
+});
+
+// Get meeting details with participant count
+router.get("/details/:meetingId", async (req, res) => {
+  try {
+    const meeting = await Meeting.findOne({
+      meetingId: req.params.meetingId,
+    });
+
+    if (!meeting) {
+      return res.status(404).json({
+        success: false,
+        message: "Meeting not found",
+      });
+    }
+
+    // Get unique participant count by email
+    const uniqueParticipants = await MeetingParticipant.distinct("email", {
+      meetingId: req.params.meetingId,
+    });
+    const participantCount = uniqueParticipants.length;
+
+    // Calculate duration if meeting has ended
+    let actualDuration = null;
+    if (meeting.startTime && meeting.endTime) {
+      const durationMs = meeting.endTime - meeting.startTime;
+      actualDuration = Math.floor(durationMs / 60000); // Convert to minutes
+    }
+
+    res.json({
+      success: true,
+      meeting: {
+        ...meeting.toObject(),
+        participantCount,
+        actualDuration,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching meeting details:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching meeting details",
     });
   }
 });
