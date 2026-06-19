@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import SimplePeer from "simple-peer";
 import { io } from "socket.io-client";
 
-const useWebRTC = (roomId, userId, userName) => {
+const useWebRTC = (roomId, userId, userName, externalSocket) => {
   const [peers, setPeers] = useState({});
   const [peerStates, setPeerStates] = useState({});
   const [localStream, setLocalStream] = useState(null);
@@ -13,7 +13,7 @@ const useWebRTC = (roomId, userId, userName) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [connectionQuality, setConnectionQuality] = useState("good");
-  const socketRef = useRef(null);
+  const socketRef = useRef(externalSocket);
   const userVideoRef = useRef(null);
   const peersRef = useRef({});
   const mediaRecorderRef = useRef(null);
@@ -22,12 +22,14 @@ const useWebRTC = (roomId, userId, userName) => {
   const qualityCheckIntervalRef = useRef(null);
 
   useEffect(() => {
-    // Initialize Socket.io connection with reconnection
-    socketRef.current = io(import.meta.env.VITE_API_URL, {
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-    });
+    // Only initialize socket if not provided externally
+    if (!externalSocket) {
+      socketRef.current = io(import.meta.env.VITE_API_URL, {
+        reconnection: true,
+        reconnectionAttempts: 5,
+        reconnectionDelay: 1000,
+      });
+    }
 
     // Get local media stream
     navigator.mediaDevices
@@ -152,9 +154,12 @@ const useWebRTC = (roomId, userId, userName) => {
         localStream.getTracks().forEach((track) => track.stop());
       }
       Object.values(peersRef.current).forEach((peer) => peer.destroy());
-      socketRef.current?.disconnect();
+      // Only disconnect socket if we created it
+      if (!externalSocket) {
+        socketRef.current?.disconnect();
+      }
     };
-  }, [roomId, userId, userName]);
+  }, [roomId, userId, userName, externalSocket]);
 
   const connectToPeer = (peerId, stream, isInitiator) => {
     if (!stream) {
@@ -261,35 +266,122 @@ const useWebRTC = (roomId, userId, userName) => {
     }
   };
 
-  const toggleAudio = () => {
+  const toggleAudio = async () => {
     if (localStream) {
       const audioTrack = localStream.getAudioTracks()[0];
       if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        const newState = audioTrack.enabled;
-        setAudioEnabled(newState);
+        if (audioTrack.enabled) {
+          // Disable and stop the track to release hardware
+          audioTrack.enabled = false;
+          audioTrack.stop();
+          setAudioEnabled(false);
+        } else {
+          // Re-enable by requesting new audio track
+          try {
+            const newAudioStream = await navigator.mediaDevices.getUserMedia({
+              audio: true,
+            });
+            const newAudioTrack = newAudioStream.getAudioTracks()[0];
+
+            // Replace the old track with the new one
+            localStream.removeTrack(audioTrack);
+            localStream.addTrack(newAudioTrack);
+
+            // Update video element with new stream
+            if (userVideoRef.current) {
+              userVideoRef.current.srcObject = localStream;
+            }
+
+            // Replace track in all peer connections
+            Object.values(peersRef.current).forEach((peer) => {
+              if (peer._pc) {
+                const sender = peer._pc
+                  .getSenders()
+                  .find((s) => s.track.kind === "audio");
+                if (sender) {
+                  sender.replaceTrack(newAudioTrack);
+                }
+              }
+            });
+
+            setAudioEnabled(true);
+          } catch (err) {
+            console.error("Error re-enabling audio:", err);
+          }
+        }
+
         // Broadcast to other users
         socketRef.current?.emit("toggle-audio", {
           roomId,
           userId,
-          audioEnabled: newState,
+          audioEnabled: !audioEnabled,
         });
       }
     }
   };
 
-  const toggleVideo = () => {
+  const toggleVideo = async () => {
     if (localStream) {
       const videoTrack = localStream.getVideoTracks()[0];
       if (videoTrack) {
-        videoTrack.enabled = !videoTrack.enabled;
-        const newState = videoTrack.enabled;
-        setVideoEnabled(newState);
+        if (videoTrack.enabled) {
+          // Disable and stop the track to release hardware
+          videoTrack.enabled = false;
+          videoTrack.stop();
+
+          // Replace with null in all peer connections to fully release
+          Object.values(peersRef.current).forEach((peer) => {
+            if (peer._pc) {
+              const sender = peer._pc
+                .getSenders()
+                .find((s) => s.track.kind === "video");
+              if (sender) {
+                sender.replaceTrack(null);
+              }
+            }
+          });
+
+          setVideoEnabled(false);
+        } else {
+          // Re-enable by requesting new video track
+          try {
+            const newVideoStream = await navigator.mediaDevices.getUserMedia({
+              video: true,
+            });
+            const newVideoTrack = newVideoStream.getVideoTracks()[0];
+
+            // Replace the old track with the new one in local stream
+            localStream.removeTrack(videoTrack);
+            localStream.addTrack(newVideoTrack);
+
+            // Update video element with new stream
+            if (userVideoRef.current) {
+              userVideoRef.current.srcObject = localStream;
+            }
+
+            // Replace track in all peer connections
+            Object.values(peersRef.current).forEach((peer) => {
+              if (peer._pc) {
+                const sender = peer._pc
+                  .getSenders()
+                  .find((s) => s.track.kind === "video");
+                if (sender) {
+                  sender.replaceTrack(newVideoTrack);
+                }
+              }
+            });
+
+            setVideoEnabled(true);
+          } catch (err) {
+            console.error("Error re-enabling video:", err);
+          }
+        }
+
         // Broadcast to other users
         socketRef.current?.emit("toggle-video", {
           roomId,
           userId,
-          videoEnabled: newState,
+          videoEnabled: !videoEnabled,
         });
       }
     }

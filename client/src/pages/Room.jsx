@@ -21,7 +21,17 @@ const Room = () => {
   const [meetingSettings, setMeetingSettings] = useState(null);
   const [isHost, setIsHost] = useState(false);
   const [handRaised, setHandRaised] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [socketReady, setSocketReady] = useState(false);
   const socketRef = useRef(null);
+
+  // Initialize socket once
+  useEffect(() => {
+    if (!socketRef.current) {
+      socketRef.current = io(import.meta.env.VITE_API_URL);
+      setSocketReady(true);
+    }
+  }, []);
 
   const {
     localStream,
@@ -40,9 +50,11 @@ const Room = () => {
     toggleScreenShare,
     toggleRecording,
     leaveRoom,
-  } = useWebRTC(roomId, userId, userName);
+  } = useWebRTC(roomId, userId, userName, socketRef.current);
 
   useEffect(() => {
+    if (!socketReady) return;
+
     // Get participant data from localStorage (guest users)
     const participantData = localStorage.getItem("participant");
     if (participantData) {
@@ -63,9 +75,10 @@ const Room = () => {
         setUserName("Guest");
       }
     }
+  }, [socketReady]);
 
-    // Socket for notifications
-    socketRef.current = io(import.meta.env.VITE_API_URL);
+  useEffect(() => {
+    if (!socketRef.current) return;
 
     // Listen for meeting settings
     socketRef.current.on("meeting-settings", (settings) => {
@@ -130,6 +143,19 @@ const Room = () => {
       );
     });
 
+    // Request message history
+    socketRef.current.emit("get-message-history", roomId);
+
+    // Listen for message history
+    socketRef.current.on("message-history", (history) => {
+      setChatMessages(history);
+    });
+
+    // Listen for new messages
+    socketRef.current.on("receive-message", (messageData) => {
+      setChatMessages((prev) => [...prev, messageData]);
+    });
+
     // Keyboard shortcuts
     const handleKeyDown = (e) => {
       // Only trigger if not typing in an input field
@@ -156,9 +182,15 @@ const Room = () => {
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
-      socketRef.current?.disconnect();
     };
-  }, [toggleAudio, toggleVideo, toggleScreenShare]);
+  }, [
+    toggleAudio,
+    toggleVideo,
+    toggleScreenShare,
+    userId,
+    meetingSettings,
+    roomId,
+  ]);
 
   const addNotification = (message, type = "info") => {
     const id = Date.now();
@@ -200,6 +232,21 @@ const Room = () => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const handleSendMessage = (messageData) => {
+    // Emit to server
+    socketRef.current?.emit("send-message", messageData);
+
+    // Add to local state immediately for instant feedback
+    setChatMessages((prev) => [
+      ...prev,
+      {
+        ...messageData,
+        id: Date.now(),
+        timestamp: new Date().toISOString(),
+      },
+    ]);
   };
 
   const handleLeave = async () => {
@@ -547,7 +594,13 @@ const Room = () => {
                   currentUserId={userId}
                 />
               ) : (
-                <Chat roomId={roomId} userId={userId} userName={userName} />
+                <Chat
+                  roomId={roomId}
+                  userId={userId}
+                  userName={userName}
+                  messages={chatMessages}
+                  onSendMessage={handleSendMessage}
+                />
               )}
             </div>
           </aside>
