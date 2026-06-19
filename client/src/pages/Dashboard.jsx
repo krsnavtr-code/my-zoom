@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import axios from "axios";
 
 const Dashboard = () => {
   const [user, setUser] = useState(null);
@@ -14,6 +15,10 @@ const Dashboard = () => {
   const [createdMeetingLink, setCreatedMeetingLink] = useState("");
   const [showIdCopied, setShowIdCopied] = useState(false);
   const [showLinkCopied, setShowLinkCopied] = useState(false);
+  const [meetings, setMeetings] = useState([]);
+  const [loadingMeetings, setLoadingMeetings] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
+  const [copiedLink, setCopiedLink] = useState(null);
   const navigate = useNavigate();
 
   // Generate 12-digit meeting ID
@@ -30,17 +35,69 @@ const Dashboard = () => {
     // Get user from localStorage
     const userData = localStorage.getItem("user");
     if (userData) {
-      setUser(JSON.parse(userData));
+      const parsedUser = JSON.parse(userData);
+      setUser(parsedUser);
+
+      // Fetch user's meetings
+      fetchUserMeetings(parsedUser.id);
     }
   }, []);
+
+  const fetchUserMeetings = async (userId) => {
+    setLoadingMeetings(true);
+    try {
+      const response = await axios.get(
+        `${import.meta.env.VITE_API_URL}/api/meeting/user/${userId}`,
+      );
+      setMeetings(response.data.meetings);
+    } catch (error) {
+      console.error("Error fetching meetings:", error);
+    } finally {
+      setLoadingMeetings(false);
+    }
+  };
+
+  const handleCopyMeetingId = (meetingId) => {
+    navigator.clipboard.writeText(meetingId);
+    setCopiedId(meetingId);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleCopyMeetingLink = (meetingId) => {
+    const link = `${window.location.origin}/room/${meetingId}`;
+    navigator.clipboard.writeText(link);
+    setCopiedLink(meetingId);
+    setTimeout(() => setCopiedLink(null), 2000);
+  };
 
   const handleCreateMeeting = () => {
     setShowMeetingModal(true);
   };
 
-  const handleStartMeeting = () => {
+  const handleStartMeeting = async () => {
     const newMeetingId = generateMeetingId();
     const meetingLink = `${window.location.origin}/room/${newMeetingId}`;
+
+    // Save meeting to database if user is logged in
+    const userData = localStorage.getItem("user");
+    if (userData) {
+      try {
+        await axios.post(`${import.meta.env.VITE_API_URL}/api/meeting/create`, {
+          meetingId: newMeetingId,
+          userId: JSON.parse(userData).id,
+          type: meetingType,
+          scheduledDate: meetingType === "scheduled" ? scheduledDate : null,
+          scheduledTime: meetingType === "scheduled" ? scheduledTime : null,
+          duration: meetingDuration,
+          password: meetingPassword || null,
+        });
+
+        // Refresh meetings list
+        fetchUserMeetings(JSON.parse(userData).id);
+      } catch (error) {
+        console.error("Error saving meeting:", error);
+      }
+    }
 
     if (meetingType === "instant") {
       navigate(`/room/${newMeetingId}`);
@@ -186,7 +243,7 @@ const Dashboard = () => {
               onClick={handleCreateMeeting}
               className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-2.5 rounded-xl hover:from-cyan-500 hover:to-blue-500 font-semibold text-sm transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)]"
             >
-              Create Session
+              Create Meeting
             </button>
           </div>
 
@@ -423,8 +480,8 @@ const Dashboard = () => {
                         className="flex-1 px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-xl font-semibold text-sm hover:from-cyan-500 hover:to-blue-500 transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)] disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
                       >
                         {meetingType === "instant"
-                          ? "Deploy Session"
-                          : "Schedule Transmission"}
+                          ? "Instent Start Meeting"
+                          : "Schedule Meeting"}
                       </button>
                     </div>
                   </>
@@ -459,7 +516,7 @@ const Dashboard = () => {
                     <div className="space-y-4 mb-6">
                       <div>
                         <label className="block text-[10px] uppercase tracking-wider font-medium text-slate-500 mb-1">
-                          Sequence ID
+                          Meeting ID
                         </label>
                         <div className="flex items-center justify-between bg-black/60 border border-slate-700 rounded-lg p-2 pl-3">
                           <input
@@ -498,7 +555,7 @@ const Dashboard = () => {
 
                       <div>
                         <label className="block text-[10px] uppercase tracking-wider font-medium text-slate-500 mb-1">
-                          Direct Uplink
+                          Direct Click Link
                         </label>
                         <div className="flex items-center justify-between bg-black/60 border border-slate-700 rounded-lg p-2 pl-3">
                           <input
@@ -540,7 +597,7 @@ const Dashboard = () => {
                     {meetingType === "scheduled" && (
                       <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-xl p-4 mb-6">
                         <h4 className="text-xs font-semibold text-cyan-400 mb-2 uppercase tracking-wide">
-                          Transmission Parameters
+                          Meeting Timing Parameters
                         </h4>
                         <div className="grid grid-cols-2 gap-2 text-xs text-slate-400">
                           <p>
@@ -582,7 +639,7 @@ const Dashboard = () => {
                         onClick={handleJoinCreatedMeeting}
                         className="flex-1 px-4 py-2 bg-gradient-to-r from-fuchsia-600 to-purple-600 text-white rounded-xl font-semibold text-sm hover:from-fuchsia-500 hover:to-purple-500 transition-all shadow-[0_0_15px_rgba(217,70,239,0.4)]"
                       >
-                        Intercept Now
+                        Join Now
                       </button>
                     </div>
                   </>
@@ -595,28 +652,203 @@ const Dashboard = () => {
         {/* Compact Recent Meetings Section */}
         <div className="mt-10 max-w-3xl w-full mx-auto">
           <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3 px-2">
-            Transmission History
+            All Meeting History
           </h3>
-          <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl p-6 text-center shadow-lg">
-            <svg
-              className="w-8 h-8 text-slate-600 mx-auto mb-2"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-            <p className="text-slate-400 text-sm">
-              No recent network traces found
-            </p>
-            <p className="text-slate-600 text-[11px] mt-1">
-              Archived sessions will index here automatically
-            </p>
+          <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl p-6 shadow-lg">
+            {loadingMeetings ? (
+              <div className="text-center py-8">
+                <div className="w-8 h-8 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full animate-spin mx-auto mb-3"></div>
+                <p className="text-slate-400 text-sm">
+                  Loading transmission history...
+                </p>
+              </div>
+            ) : meetings.length === 0 ? (
+              <div className="text-center py-8">
+                <svg
+                  className="w-8 h-8 text-slate-600 mx-auto mb-2"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <p className="text-slate-400 text-sm">
+                  No recent network traces found
+                </p>
+                <p className="text-slate-600 text-[11px] mt-1">
+                  Archived sessions will index here automatically
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {meetings.map((meeting) => (
+                  <div
+                    key={meeting._id}
+                    className="flex items-center justify-between bg-black/30 border border-white/5 rounded-lg p-4 hover:border-cyan-500/30 transition-all group"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div
+                        className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                          meeting.type === "instant"
+                            ? "bg-cyan-500/10 border border-cyan-500/30"
+                            : "bg-fuchsia-500/10 border border-fuchsia-500/30"
+                        }`}
+                      >
+                        <svg
+                          className={`w-5 h-5 ${meeting.type === "instant" ? "text-cyan-400" : "text-fuchsia-400"}`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d={
+                              meeting.type === "instant"
+                                ? "M13 10V3L4 14h7v7l9-11h-7z"
+                                : "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                            }
+                          />
+                        </svg>
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-mono text-cyan-400 text-sm font-bold">
+                            {meeting.meetingId}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                              meeting.status === "active"
+                                ? "bg-green-500/10 text-green-400 border border-green-500/30"
+                                : meeting.status === "scheduled"
+                                  ? "bg-yellow-500/10 text-yellow-400 border border-yellow-500/30"
+                                  : "bg-slate-500/10 text-slate-400 border border-slate-500/30"
+                            }`}
+                          >
+                            {meeting.status}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-slate-400">
+                          <span className="capitalize">{meeting.type}</span>
+                          {meeting.scheduledDate && (
+                            <>
+                              <span>•</span>
+                              <span>
+                                {new Date(
+                                  meeting.scheduledDate,
+                                ).toLocaleDateString()}
+                              </span>
+                              <span>•</span>
+                              <span>{meeting.scheduledTime}</span>
+                            </>
+                          )}
+                          {meeting.duration && (
+                            <>
+                              <span>•</span>
+                              <span>{meeting.duration}m</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleCopyMeetingId(meeting.meetingId)}
+                        className="px-3 py-2 bg-white/5 border border-white/10 text-cyan-400 rounded-lg hover:bg-cyan-500/10 hover:border-cyan-500/50 text-xs font-medium transition-all flex items-center gap-1.5"
+                      >
+                        {copiedId === meeting.meetingId ? (
+                          <>
+                            <svg
+                              className="w-3 h-3"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M5 13l4 4L19 7"
+                              />
+                            </svg>
+                            Copied
+                          </>
+                        ) : (
+                          <>
+                            <svg
+                              className="w-3 h-3"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                              />
+                            </svg>
+                            Copy ID
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => handleCopyMeetingLink(meeting.meetingId)}
+                        className="px-3 py-2 bg-white/5 border border-white/10 text-cyan-400 rounded-lg hover:bg-cyan-500/10 hover:border-cyan-500/50 text-xs font-medium transition-all flex items-center gap-1.5"
+                      >
+                        {copiedLink === meeting.meetingId ? (
+                          <>
+                            <svg
+                              className="w-3 h-3"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M5 13l4 4L19 7"
+                              />
+                            </svg>
+                            Copied
+                          </>
+                        ) : (
+                          <>
+                            <svg
+                              className="w-3 h-3"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                              />
+                            </svg>
+                            Copy Link
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => navigate(`/join/${meeting.meetingId}`)}
+                        className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-lg hover:from-cyan-500 hover:to-blue-500 text-xs font-medium transition-all shadow-[0_0_10px_rgba(6,182,212,0.3)]"
+                      >
+                        Join
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </main>

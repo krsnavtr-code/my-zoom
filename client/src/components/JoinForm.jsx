@@ -1,46 +1,103 @@
-import { useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import axios from 'axios';
+import { useState, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import axios from "axios";
 
 const JoinForm = () => {
   const { id: roomId } = useParams();
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phone: ''
+    name: "",
+    email: "",
+    phone: "",
   });
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    // Check if user is already logged in
+    const userData = localStorage.getItem("user");
+    if (userData) {
+      const user = JSON.parse(userData);
+      // Auto-join with existing user data
+      autoJoinWithUser(user);
+    } else {
+      setIsCheckingAuth(false);
+    }
+  }, [roomId]);
+
+  const autoJoinWithUser = async (user) => {
+    setLoading(true);
+    try {
+      // Save participant to database with user's info
+      const response = await axios.post(
+        `${import.meta.env.VITE_API_URL}/api/meeting/participant`,
+        {
+          meetingId: roomId,
+          name: user.name,
+          email: user.email,
+          phone: user.phone || "0000000000", // Default if phone not available
+        },
+      );
+
+      // Store participant info in localStorage
+      localStorage.setItem(
+        "participant",
+        JSON.stringify({
+          name: user.name,
+          email: user.email,
+          phone: user.phone || "0000000000",
+          participantId: response.data.participantId,
+          meetingId: roomId,
+        }),
+      );
+
+      // Navigate to room
+      navigate(`/room/${roomId}`);
+    } catch (err) {
+      console.error("Auto-join failed:", err);
+      setIsCheckingAuth(false);
+      setError(
+        err.response?.data?.message ||
+          "Auto-connection failed. Please enter details manually.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleChange = (e) => {
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
+      [e.target.name]: e.target.value,
     });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError("");
 
     // Validate fields
-    if (!formData.name.trim() || !formData.email.trim() || !formData.phone.trim()) {
-      setError('All fields are required');
+    if (
+      !formData.name.trim() ||
+      !formData.email.trim() ||
+      !formData.phone.trim()
+    ) {
+      setError("All parameters are required for sync.");
       return;
     }
 
     // Validate email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(formData.email)) {
-      setError('Please enter a valid email');
+      setError("Invalid identity sequence (Email).");
       return;
     }
 
     // Validate phone (basic validation)
     const phoneRegex = /^[0-9]{10,}$/;
-    if (!phoneRegex.test(formData.phone.replace(/[\s-]/g, ''))) {
-      setError('Please enter a valid phone number (at least 10 digits)');
+    if (!phoneRegex.test(formData.phone.replace(/[\s-]/g, ""))) {
+      setError("Invalid commlink frequency. Minimum 10 digits required.");
       return;
     }
 
@@ -48,119 +105,199 @@ const JoinForm = () => {
 
     try {
       // Save participant to database
-      const response = await axios.post(`${import.meta.env.VITE_API_URL}/api/meeting/participant`, {
-        meetingId: roomId,
-        name: formData.name,
-        email: formData.email,
-        phone: formData.phone
-      });
+      const response = await axios.post(
+        `${import.meta.env.VITE_API_URL}/api/meeting/participant`,
+        {
+          meetingId: roomId,
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+        },
+      );
 
       // Store participant info in localStorage
-      localStorage.setItem('participant', JSON.stringify({
-        ...formData,
-        participantId: response.data.participantId,
-        meetingId: roomId
-      }));
+      localStorage.setItem(
+        "participant",
+        JSON.stringify({
+          ...formData,
+          participantId: response.data.participantId,
+          meetingId: roomId,
+        }),
+      );
 
       // Navigate to room
       navigate(`/room/${roomId}`);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to join meeting. Please try again.');
+      setError(
+        err.response?.data?.message ||
+          "Connection failed. Node may be offline.",
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-white flex items-center justify-center px-4 sm:px-6 lg:px-8 py-12">
-      <div className="max-w-md w-full">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-blue-600 rounded-xl flex items-center justify-center mx-auto mb-4">
-            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-            </svg>
+    <div className="min-h-screen bg-[#0a0a0f] text-slate-300 flex items-center justify-center px-4 relative overflow-hidden font-sans">
+      {/* Futuristic Background Grid & Glow */}
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:32px_32px] pointer-events-none" />
+      <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-cyan-900/20 blur-[120px] rounded-full pointer-events-none" />
+      <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-fuchsia-900/20 blur-[120px] rounded-full pointer-events-none" />
+
+      <div className="max-w-sm w-full relative z-10 py-8">
+        {/* Loading state while checking auth */}
+        {isCheckingAuth || loading ? (
+          <div className="text-center">
+            <div className="w-12 h-12 bg-gradient-to-tr from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-[0_0_15px_rgba(6,182,212,0.5)]">
+              <svg
+                className="w-7 h-7 text-white animate-spin"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+            </div>
+            <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 tracking-tight">
+              Establishing Connection...
+            </h1>
+            <p className="text-xs text-slate-400 mt-2">
+              Verifying identity parameters
+            </p>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Join Meeting</h1>
-          <p className="text-gray-600 mt-2">Meeting ID: {roomId}</p>
-        </div>
-
-        {/* Form */}
-        <div className="bg-white rounded-2xl shadow-lg p-8">
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-red-600 text-sm">{error}</p>
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
-                Full Name
-              </label>
-              <input
-                id="name"
-                name="name"
-                type="text"
-                value={formData.name}
-                onChange={handleChange}
-                placeholder="Enter your full name"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                required
-              />
-            </div>
-
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                Email Address
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                value={formData.email}
-                onChange={handleChange}
-                placeholder="Enter your email"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                required
-              />
+        ) : (
+          <>
+            {/* Header / Logo */}
+            <div className="text-center mb-6">
+              <div className="w-12 h-12 bg-gradient-to-tr from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-[0_0_15px_rgba(6,182,212,0.5)]">
+                <svg
+                  className="w-7 h-7 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                  />
+                </svg>
+              </div>
+              <h1 className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 tracking-tight">
+                Intercept Node
+              </h1>
+              <p className="text-xs text-slate-400 mt-1 flex items-center justify-center gap-1">
+                Target ID:{" "}
+                <span className="font-mono text-cyan-400">{roomId}</span>
+              </p>
             </div>
 
-            <div>
-              <label htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-2">
-                Phone Number
-              </label>
-              <input
-                id="phone"
-                name="phone"
-                type="tel"
-                value={formData.phone}
-                onChange={handleChange}
-                placeholder="Enter your phone number"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                required
-              />
+            {/* Cyberpunk Form Card */}
+            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-[0_0_30px_rgba(0,0,0,0.8)]">
+              {error && (
+                <div className="bg-red-500/10 border border-red-500/50 text-red-400 px-4 py-2 rounded-xl text-sm mb-5 text-center">
+                  {error}
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <label
+                    htmlFor="name"
+                    className="block text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-1"
+                  >
+                    Operator Designation
+                  </label>
+                  <input
+                    id="name"
+                    name="name"
+                    type="text"
+                    value={formData.name}
+                    onChange={handleChange}
+                    placeholder="Enter full name"
+                    className="w-full bg-black/50 px-4 py-2.5 border border-slate-700 rounded-xl focus:ring-1 focus:ring-cyan-500 focus:border-cyan-500 outline-none text-cyan-50 placeholder-slate-600 text-sm transition-all"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="email"
+                    className="block text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-1"
+                  >
+                    Identity Sequence
+                  </label>
+                  <input
+                    id="email"
+                    name="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                    placeholder="user@network.local"
+                    className="w-full bg-black/50 px-4 py-2.5 border border-slate-700 rounded-xl focus:ring-1 focus:ring-cyan-500 focus:border-cyan-500 outline-none text-cyan-50 placeholder-slate-600 text-sm transition-all"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="phone"
+                    className="block text-[11px] uppercase tracking-wider font-medium text-slate-400 mb-1"
+                  >
+                    Commlink Frequency
+                  </label>
+                  <input
+                    id="phone"
+                    name="phone"
+                    type="tel"
+                    value={formData.phone}
+                    onChange={handleChange}
+                    placeholder="Enter phone number"
+                    className="w-full bg-black/50 px-4 py-2.5 border border-slate-700 rounded-xl focus:ring-1 focus:ring-cyan-500 focus:border-cyan-500 outline-none text-cyan-50 placeholder-slate-600 text-sm transition-all"
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full mt-2 bg-gradient-to-r from-cyan-600 to-blue-600 text-white py-2.5 rounded-xl hover:from-cyan-500 hover:to-blue-500 font-semibold text-sm transition-all shadow-[0_0_15px_rgba(6,182,212,0.4)] disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
+                >
+                  {loading ? "Establishing Link..." : "Enter Session"}
+                </button>
+              </form>
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-blue-600 text-white py-4 rounded-lg hover:bg-blue-700 font-semibold text-lg transition-colors shadow-md hover:shadow-lg disabled:bg-gray-300 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Joining...' : 'Join Meeting'}
-            </button>
-          </form>
-        </div>
-
-        {/* Back to home */}
-        <div className="text-center mt-6">
-          <button
-            onClick={() => navigate('/')}
-            className="text-blue-600 hover:text-blue-700 font-medium transition-colors"
-          >
-            ← Back to Home
-          </button>
-        </div>
+            {/* Back to home */}
+            <div className="mt-6 text-center">
+              <button
+                onClick={() => navigate("/")}
+                className="text-slate-500 hover:text-cyan-400 text-xs transition-colors flex items-center justify-center gap-1 mx-auto"
+              >
+                <svg
+                  className="w-3 h-3"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M10 19l-7-7m0 0l7-7m-7 7h18"
+                  />
+                </svg>
+                Abort & Return
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

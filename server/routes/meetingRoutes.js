@@ -1,82 +1,145 @@
-import express from 'express';
-import MeetingParticipant from '../models/MeetingParticipant.js';
+import express from "express";
+import MeetingParticipant from "../models/MeetingParticipant.js";
+import Meeting from "../models/Meeting.js";
 
 const router = express.Router();
 
 // Save meeting participant
-router.post('/participant', async (req, res) => {
+router.post("/participant", async (req, res) => {
   try {
     const { meetingId, name, email, phone } = req.body;
-    
+
     const participant = new MeetingParticipant({
       meetingId,
       name,
       email,
-      phone
+      phone,
     });
-    
+
     await participant.save();
-    
+
     res.status(201).json({
       success: true,
       participantId: participant._id,
-      message: 'Participant saved successfully'
+      message: "Participant saved successfully",
     });
   } catch (error) {
-    console.error('Error saving participant:', error);
+    console.error("Error saving participant:", error);
     res.status(500).json({
       success: false,
-      message: 'Error saving participant'
+      message: "Error saving participant",
     });
   }
 });
 
 // Update participant leave time
-router.put('/participant/:id/leave', async (req, res) => {
+router.put("/participant/:id/leave", async (req, res) => {
   try {
     const participant = await MeetingParticipant.findById(req.params.id);
-    
+
     if (!participant) {
       return res.status(404).json({
         success: false,
-        message: 'Participant not found'
+        message: "Participant not found",
       });
     }
-    
+
     participant.leaveTime = new Date();
-    participant.duration = Math.floor((participant.leaveTime - participant.joinTime) / 1000);
-    
+    participant.duration = Math.floor(
+      (participant.leaveTime - participant.joinTime) / 1000,
+    );
+
     await participant.save();
-    
+
     res.json({
       success: true,
-      message: 'Leave time updated successfully'
+      message: "Leave time updated successfully",
     });
   } catch (error) {
-    console.error('Error updating leave time:', error);
+    console.error("Error updating leave time:", error);
     res.status(500).json({
       success: false,
-      message: 'Error updating leave time'
+      message: "Error updating leave time",
     });
   }
 });
 
 // Get meeting participants
-router.get('/participants/:meetingId', async (req, res) => {
+router.get("/participants/:meetingId", async (req, res) => {
   try {
-    const participants = await MeetingParticipant.find({ 
-      meetingId: req.params.meetingId 
+    const participants = await MeetingParticipant.find({
+      meetingId: req.params.meetingId,
     }).sort({ joinTime: -1 });
-    
+
     res.json({
       success: true,
-      participants
+      participants,
     });
   } catch (error) {
-    console.error('Error fetching participants:', error);
+    console.error("Error fetching participants:", error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching participants'
+      message: "Error fetching participants",
+    });
+  }
+});
+
+// Create/save meeting
+router.post("/create", async (req, res) => {
+  try {
+    const {
+      meetingId,
+      userId,
+      type,
+      scheduledDate,
+      scheduledTime,
+      duration,
+      password,
+    } = req.body;
+
+    const meeting = new Meeting({
+      meetingId,
+      userId,
+      type,
+      scheduledDate: type === "scheduled" ? new Date(scheduledDate) : null,
+      scheduledTime: type === "scheduled" ? scheduledTime : null,
+      duration,
+      password,
+      status: type === "instant" ? "active" : "scheduled",
+    });
+
+    await meeting.save();
+
+    res.status(201).json({
+      success: true,
+      meetingId: meeting._id,
+      message: "Meeting saved successfully",
+    });
+  } catch (error) {
+    console.error("Error saving meeting:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error saving meeting",
+    });
+  }
+});
+
+// Get user's meetings
+router.get("/user/:userId", async (req, res) => {
+  try {
+    const meetings = await Meeting.find({
+      userId: req.params.userId,
+    }).sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      meetings,
+    });
+  } catch (error) {
+    console.error("Error fetching user meetings:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching user meetings",
     });
   }
 });
