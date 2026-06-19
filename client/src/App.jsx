@@ -3,6 +3,7 @@ import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
+import Room from "./pages/Room";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 function App() {
@@ -19,7 +20,7 @@ function App() {
           </ProtectedRoute>
         }
       />
-      <Route path="/room/:id" element={<div>Room Page - Coming Soon</div>} />
+      <Route path="/room/:id" element={<Room />} />
     </Routes>
   );
 }

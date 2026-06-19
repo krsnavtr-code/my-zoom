@@ -50,6 +50,20 @@ io.on("connection", (socket) => {
       socket.to(roomId).emit("user-disconnected", userId);
     });
   });
+
+  // WebRTC signaling
+  socket.on("call-user", ({ userToCall, signalData, from }) => {
+    socket.to(userToCall).emit("call-user", { signal, callerId: from });
+  });
+
+  socket.on("call-accepted", ({ signal, callId }) => {
+    socket.to(callId).emit("call-accepted", { signal, callId });
+  });
+
+  socket.on("leave-room", (roomId, userId) => {
+    socket.leave(roomId);
+    socket.to(roomId).emit("user-disconnected", userId);
+  });
 });
 
 const PORT = process.env.PORT || 5000;
