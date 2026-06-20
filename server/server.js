@@ -281,7 +281,7 @@ io.on("connection", (socket) => {
       if (targetUser) {
         socket
           .to(targetUser.socketId)
-          .emit("call-accepted", { signal, callId: socket.userId }); 
+          .emit("call-accepted", { signal, callId: socket.userId });
       } else {
         console.error("User not found in room:", callId);
       }
