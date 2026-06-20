@@ -536,23 +536,26 @@ const Room = () => {
               ...Object.keys(peers).map((peerId) => {
                 const streams = peers[peerId] || [];
                 const state = peerStates[peerId] || {};
-
-                // Identify which stream is camera and which is screen
+                
                 let pScreenStream = null;
-                let pCameraStream = streams[0];
+                let pCameraStream = null;
 
-                if (state.isScreenSharing && streams.length > 0) {
-                  pScreenStream =
-                    streams.find((s) => s.id === state.screenStreamId) ||
-                    streams[1];
-                  pCameraStream =
-                    streams.find((s) => s !== pScreenStream) || streams[0];
+                // 🟢 STREAM MATCHING FIX:
+                if (streams.length > 0) {
+                    if (state.isScreenSharing && state.screenStreamId) {
+                        // Agar screen share on hai, toh ID match karo
+                        pScreenStream = streams.find(s => s.id === state.screenStreamId);
+                        pCameraStream = streams.find(s => s.id !== state.screenStreamId) || streams[0];
+                    } else {
+                        // Agar nahi, toh pehli stream camera hai
+                        pCameraStream = streams[0];
+                    }
                 }
 
                 return {
                   id: peerId,
                   name: peerNames[peerId] || `User ${peerId.slice(0, 8)}`,
-                  cameraStream: pCameraStream,
+                  cameraStream: pCameraStream, // Ab ye hamesha ek object hoga, undefined nahi
                   screenStream: pScreenStream,
                   isLocal: false,
                   isScreenSharing: state.isScreenSharing,

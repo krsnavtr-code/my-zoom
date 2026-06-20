@@ -189,22 +189,45 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
         else socket.emit("call-accepted", { signal: signal, callId: peerId });
       });
 
+      // 🟢 FIX 4: Reload user ki stream jab baakiyo ko mile, toh usko correctly set karo
       peer.on("stream", (userStream) => {
+        console.log(`📺 Received remote video stream from ${peerId}! (Track kind: ${userStream.getTracks().map(t => t.kind).join(", ")})`);
+        
+        // Ensure state is updated correctly with the fresh stream
         setPeers((prev) => {
+          // If we receive a screen share stream (check tracks or state), handle it, 
+          // otherwise it's the primary camera stream.
           const existingStreams = prev[peerId] || [];
-          if (existingStreams.some((s) => s.id === userStream.id)) return prev;
+          
+          // Prevent duplicate streams from being added
+          if (existingStreams.some(s => s.id === userStream.id)) {
+            return prev;
+          }
+          
+          // Hamesha naye stream array ke roop me hi return karo
           return { ...prev, [peerId]: [...existingStreams, userStream] };
         });
+
+        // Initialize state for the new user if it doesn't exist
         setPeerStates((prev) => {
           if (prev[peerId]) return prev;
-          return {
-            ...prev,
-            [peerId]: {
-              audioEnabled: true,
-              videoEnabled: true,
-              isScreenSharing: false,
-            },
-          };
+          return { ...prev, [peerId]: { audioEnabled: true, videoEnabled: true, isScreenSharing: false } };
+        });
+      });
+
+      // 🔴 IMPORTANT FIX 5: Track events par listener lagao!
+      // Kai baar track late aate hain. SimplePeer me 'track' event use karna zyada safe hota hai.
+      peer.on("track", (track, stream) => {
+        console.log(`🎥 Received individual track (${track.kind}) from ${peerId}`);
+        // Jab koi late video track bhejta hai (jaise reload ke baad on karne par), 
+        // toh forcefully peers state ko update karo taaki React rerender ho.
+        setPeers((prev) => {
+            const currentStreams = prev[peerId] || [];
+            if (currentStreams.some(s => s.id === stream.id)) {
+                // If stream is already there, we still need to force a re-render
+                return { ...prev, [peerId]: [...currentStreams] }; 
+            }
+            return { ...prev, [peerId]: [...currentStreams, stream] };
         });
       });
 
