@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import SimplePeer from "simple-peer";
-import { io } from "socket.io-client";
-import { API_URL } from "../config";
 
 const useWebRTC = (roomId, userId, userName, externalSocket) => {
   const [peers, setPeers] = useState({});
@@ -16,152 +14,78 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [connectionQuality, setConnectionQuality] = useState("good");
-  const socketRef = useRef(externalSocket);
   const userVideoRef = useRef(null);
   const peersRef = useRef({});
   const peerNamesRef = useRef({});
-  const mediaRecorderRef = useRef(null);
-  const recordedChunksRef = useRef([]);
-  const recordingTimerRef = useRef(null);
-  const qualityCheckIntervalRef = useRef(null);
 
   useEffect(() => {
-    // Only initialize socket if not provided externally
-    if (!externalSocket) {
-      socketRef.current = io(API_URL, {
-        reconnection: true,
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000,
+    // 🟢 FIX: Do NOT create internal fallback sockets. Wait for Room.jsx socket.
+    if (!externalSocket || !userId) return;
+
+    // Start video/audio access
+    navigator.mediaDevices
+      .getUserMedia({ video: true, audio: true })
+      .then((stream) => {
+        setLocalStream(stream);
+        localStreamRef.current = stream;
+        if (userVideoRef.current) {
+          userVideoRef.current.srcObject = stream;
+        }
+
+        // Emit join AFTER stream is ready
+        externalSocket.emit("join-room", roomId, userId, userName);
+      })
+      .catch((err) => console.error("Error accessing media devices:", err));
+
+    externalSocket.on("room-users", (existingUsers) => {
+      existingUsers.forEach((existingUserId) => {
+        if (localStreamRef.current) {
+          connectToPeer(
+            existingUserId,
+            localStreamRef.current,
+            false,
+            externalSocket,
+          );
+        }
       });
-    }
-
-    // Don't initialize if socket is null
-    if (!socketRef.current) {
-      console.error("Socket is null, cannot initialize WebRTC");
-      return;
-    }
-
-    // Set up socket listeners BEFORE joining room
-    socketRef.current.on("room-users", (existingUsers) => {
-      console.log("Existing users in room:", existingUsers);
-      // Delay peer connections to ensure stream is fully ready
-      setTimeout(() => {
-        existingUsers.forEach((existingUserId) => {
-          if (localStreamRef.current) {
-            connectToPeer(existingUserId, localStreamRef.current, false);
-          }
-        });
-      }, 100);
     });
 
-    // Listen for user names (to get names of existing users)
-    socketRef.current.on("user-names", (userNames) => {
-      console.log("Received user names:", userNames);
+    externalSocket.on("user-names", (userNames) => {
       peerNamesRef.current = { ...peerNamesRef.current, ...userNames };
       setPeerNames((prev) => ({ ...prev, ...userNames }));
     });
 
-    // Listen for other users joining
-    socketRef.current.on(
+    externalSocket.on(
       "user-connected",
       ({ userId: callerId, userName: callerName }) => {
-        console.log("User connected:", callerId, callerName);
-        // Store peer name
         peerNamesRef.current[callerId] = callerName;
         setPeerNames((prev) => ({ ...prev, [callerId]: callerName }));
         if (localStreamRef.current) {
-          connectToPeer(callerId, localStreamRef.current, true);
+          connectToPeer(callerId, localStreamRef.current, true, externalSocket);
         }
       },
     );
 
-    // Listen for incoming calls
-    socketRef.current.on("call-user", ({ signal, callerId }) => {
-      console.log("Received call from:", callerId);
+    externalSocket.on("call-user", ({ signal, callerId }) => {
       let peer = peersRef.current[callerId];
-      if (!peer) {
-        console.log(
-          "Peer connection not found for caller, creating one as receiver",
+      if (!peer && localStreamRef.current) {
+        peer = connectToPeer(
+          callerId,
+          localStreamRef.current,
+          false,
+          externalSocket,
         );
-        if (localStreamRef.current) {
-          peer = connectToPeer(callerId, localStreamRef.current, false);
-        } else {
-          console.error(
-            "Cannot create peer connection: local stream not ready",
-          );
-          return;
-        }
       }
-      if (peer) {
-        peer.signal(signal);
-      }
+      if (peer) peer.signal(signal);
     });
 
-    // Listen for call accepted
-    socketRef.current.on("call-accepted", ({ signal, callId }) => {
-      console.log("Call accepted by:", callId);
+    externalSocket.on("call-accepted", ({ signal, callId }) => {
       if (peersRef.current[callId]) {
         peersRef.current[callId].signal(signal);
-      } else {
-        console.error("Peer not found for call:", callId);
       }
     });
 
-    // Listen for ICE candidates (not needed with trickle: true, but kept for compatibility)
-    socketRef.current.on("ice-candidate", ({ candidate, from }) => {
-      if (peersRef.current[from]) {
-        try {
-          peersRef.current[from].addIceCandidate(
-            new RTCIceCandidate(candidate),
-          );
-        } catch (err) {
-          console.error("Error adding ICE candidate:", err);
-        }
-      }
-    });
-
-    // Listen for user audio toggle
-    socketRef.current.on(
-      "user-audio-toggled",
-      ({ userId: toggledUserId, audioEnabled: isEnabled }) => {
-        setPeerStates((prev) => ({
-          ...prev,
-          [toggledUserId]: {
-            ...prev[toggledUserId],
-            audioEnabled: isEnabled,
-          },
-        }));
-      },
-    );
-
-    // Listen for user video toggle
-    socketRef.current.on(
-      "user-video-toggled",
-      ({ userId: toggledUserId, videoEnabled: isEnabled }) => {
-        setPeerStates((prev) => ({
-          ...prev,
-          [toggledUserId]: {
-            ...prev[toggledUserId],
-            videoEnabled: isEnabled,
-          },
-        }));
-      },
-    );
-
-    // Listen for user screen share toggle
-    socketRef.current.on(
-      "user-screen-share-toggled",
-      ({ userId: sharerId, isScreenSharing: isSharing }) => {
-        setPeerStates((prev) => ({
-          ...prev,
-          [sharerId]: { ...prev[sharerId], isScreenSharing: isSharing },
-        }));
-      },
-    );
-
-    // Listen for user disconnected
-    socketRef.current.on("user-disconnected", (disconnectedUserId) => {
-      console.log("User disconnected:", disconnectedUserId);
+    externalSocket.on("user-disconnected", (disconnectedUserId) => {
       if (peersRef.current[disconnectedUserId]) {
         peersRef.current[disconnectedUserId].destroy();
         delete peersRef.current[disconnectedUserId];
@@ -175,40 +99,10 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
           delete newStates[disconnectedUserId];
           return newStates;
         });
-        setPeerNames((prev) => {
-          const newNames = { ...prev };
-          delete newNames[disconnectedUserId];
-          return newNames;
-        });
-        delete peerNamesRef.current[disconnectedUserId];
       }
     });
 
-    // Get local media stream
-    navigator.mediaDevices
-      .getUserMedia({ video: true, audio: true })
-      .then((stream) => {
-        console.log("Got local stream");
-        // Ensure stream is ready before setting state
-        if (stream.getTracks().length > 0) {
-          setLocalStream(stream);
-          localStreamRef.current = stream;
-          if (userVideoRef.current) {
-            userVideoRef.current.srcObject = stream;
-          }
-
-          // Join room with user name after stream is ready and listeners are set up
-          socketRef.current.emit("join-room", roomId, userId, userName);
-        } else {
-          console.error("Stream has no tracks");
-        }
-      })
-      .catch((err) => {
-        console.error("Error accessing media devices:", err);
-      });
-
     return () => {
-      // Cleanup
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => track.stop());
         localStreamRef.current = null;
@@ -216,54 +110,18 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
       Object.values(peersRef.current).forEach((peer) => peer.destroy());
       peersRef.current = {};
 
-      // Cleanup socket listeners to prevent duplicates
-      if (socketRef.current) {
-        socketRef.current.off("room-users");
-        socketRef.current.off("user-names");
-        socketRef.current.off("user-connected");
-        socketRef.current.off("call-user");
-        socketRef.current.off("call-accepted");
-        socketRef.current.off("ice-candidate");
-        socketRef.current.off("user-audio-toggled");
-        socketRef.current.off("user-video-toggled");
-        socketRef.current.off("user-screen-share-toggled");
-        socketRef.current.off("user-disconnected");
-      }
-
-      // Only disconnect socket if we created it
-      if (!externalSocket) {
-        socketRef.current?.disconnect();
-      }
+      externalSocket.off("room-users");
+      externalSocket.off("user-names");
+      externalSocket.off("user-connected");
+      externalSocket.off("call-user");
+      externalSocket.off("call-accepted");
+      externalSocket.off("user-disconnected");
     };
   }, [roomId, userId, userName, externalSocket]);
 
-  const connectToPeer = (peerId, stream, isInitiator) => {
-    if (!stream) {
-      console.error("Cannot connect to peer: stream is undefined");
-      return;
-    }
-
-    if (!stream.getTracks || stream.getTracks().length === 0) {
-      console.error("Cannot connect to peer: stream has no tracks");
-      return;
-    }
-
-    // Check if stream is a valid MediaStream
-    if (!(stream instanceof MediaStream)) {
-      console.error("Cannot connect to peer: stream is not a MediaStream");
-      return;
-    }
-
-    // Check if stream is active
-    if (stream.active === false) {
-      console.error("Cannot connect to peer: stream is not active");
-      return;
-    }
-
-    if (peersRef.current[peerId]) {
-      console.log("Peer connection already exists for user:", peerId);
-      return peersRef.current[peerId];
-    }
+  const connectToPeer = (peerId, stream, isInitiator, socket) => {
+    if (!stream || !stream.active) return;
+    if (peersRef.current[peerId]) return peersRef.current[peerId];
 
     try {
       const peer = new SimplePeer({
@@ -274,46 +132,28 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
             { urls: "stun:stun1.l.google.com:19302" },
-            { urls: "stun:stun2.l.google.com:19302" },
           ],
         },
       });
 
       peer.on("signal", (signal) => {
         if (isInitiator) {
-          socketRef.current.emit("call-user", {
+          socket.emit("call-user", {
             userToCall: peerId,
             signalData: signal,
             from: userId,
           });
         } else {
-          socketRef.current.emit("call-accepted", {
-            signal: signal,
-            callId: peerId,
-          });
+          socket.emit("call-accepted", { signal: signal, callId: peerId });
         }
       });
 
       peer.on("stream", (userStream) => {
-        setPeers((prev) => ({
-          ...prev,
-          [peerId]: userStream,
-        }));
+        setPeers((prev) => ({ ...prev, [peerId]: userStream }));
         setPeerStates((prev) => ({
           ...prev,
           [peerId]: { audioEnabled: true, videoEnabled: true },
         }));
-      });
-
-      peer.on("ice-candidate", (candidate) => {
-        socketRef.current.emit("ice-candidate", {
-          candidate,
-          to: peerId,
-        });
-      });
-
-      peer.on("error", (err) => {
-        console.error("Peer connection error:", err);
       });
 
       peer.on("close", () => {
@@ -326,27 +166,6 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
           });
         }
       });
-
-      // Monitor connection quality
-      peer.on("connect", () => {
-        setConnectionQuality("good");
-      });
-
-      // Monitor ICE connection state via RTCPeerConnection
-      if (peer._pc) {
-        peer._pc.addEventListener("iceconnectionstatechange", () => {
-          const iceState = peer._pc.iceConnectionState;
-          if (
-            iceState === "disconnected" ||
-            iceState === "failed" ||
-            iceState === "closed"
-          ) {
-            setConnectionQuality("poor");
-          } else if (iceState === "connected" || iceState === "completed") {
-            setConnectionQuality("good");
-          }
-        });
-      }
 
       peersRef.current[peerId] = peer;
       return peer;
@@ -474,45 +293,6 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
         });
       }
     }
-  };
-
-  const leaveRoom = () => {
-    // Stop all tracks
-    if (localStream) {
-      localStream.getTracks().forEach((track) => track.stop());
-    }
-    if (screenStream) {
-      screenStream.getTracks().forEach((track) => track.stop());
-    }
-
-    // Destroy all peers and cleanup references
-    Object.values(peersRef.current).forEach((peer) => {
-      if (peer && typeof peer.destroy === "function") {
-        peer.destroy();
-      }
-    });
-    peersRef.current = {};
-    setPeers({});
-    setPeerStates({});
-
-    // Stop recording if active
-    if (isRecording) {
-      stopRecording();
-    }
-
-    // Clear quality check interval
-    if (qualityCheckIntervalRef.current) {
-      clearInterval(qualityCheckIntervalRef.current);
-    }
-
-    // Disconnect socket
-    socketRef.current?.emit("leave-room", roomId, userId);
-    socketRef.current?.disconnect();
-    socketRef.current = null;
-
-    // Cleanup refs
-    setLocalStream(null);
-    setScreenStream(null);
   };
 
   const startScreenShare = async () => {
@@ -659,6 +439,13 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
     } else {
       startRecording();
     }
+  };
+
+  const leaveRoom = () => {
+    if (localStream) localStream.getTracks().forEach((track) => track.stop());
+    Object.values(peersRef.current).forEach((peer) => peer.destroy());
+    setPeers({});
+    setLocalStream(null);
   };
 
   return {
