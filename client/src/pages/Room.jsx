@@ -254,6 +254,18 @@ const Room = () => {
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
+      if (socketRef.current) {
+        socketRef.current.off("meeting-settings");
+        socketRef.current.off("user-connected");
+        socketRef.current.off("user-disconnected");
+        socketRef.current.off("user-hand-raised");
+        socketRef.current.off("kicked-from-room");
+        socketRef.current.off("force-mute");
+        socketRef.current.off("meeting-locked");
+        socketRef.current.off("meeting-ended");
+        socketRef.current.off("message-history");
+        socketRef.current.off("receive-message");
+      }
     };
   }, [
     toggleAudio,
