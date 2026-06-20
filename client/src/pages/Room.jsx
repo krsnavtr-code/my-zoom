@@ -85,6 +85,7 @@ const Room = () => {
     localStream,
     screenStream,
     peers,
+    peerNames,
     peerStates,
     audioEnabled,
     videoEnabled,
@@ -366,7 +367,7 @@ const Room = () => {
     },
     ...Object.entries(peers).map(([peerId, stream]) => ({
       id: peerId,
-      name: `User ${peerId.slice(0, 8)}`,
+      name: peerNames[peerId] || `User ${peerId.slice(0, 8)}`,
       stream: stream,
       isLocal: false,
     })),

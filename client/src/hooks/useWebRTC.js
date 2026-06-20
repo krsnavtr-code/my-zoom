@@ -4,6 +4,7 @@ import { io } from "socket.io-client";
 
 const useWebRTC = (roomId, userId, userName, externalSocket) => {
   const [peers, setPeers] = useState({});
+  const [peerNames, setPeerNames] = useState({});
   const [peerStates, setPeerStates] = useState({});
   const [localStream, setLocalStream] = useState(null);
   const [screenStream, setScreenStream] = useState(null);
@@ -16,6 +17,7 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
   const socketRef = useRef(externalSocket);
   const userVideoRef = useRef(null);
   const peersRef = useRef({});
+  const peerNamesRef = useRef({});
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
   const recordingTimerRef = useRef(null);
@@ -50,11 +52,21 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
       }, 100);
     });
 
+    // Listen for user names (to get names of existing users)
+    socketRef.current.on("user-names", (userNames) => {
+      console.log("Received user names:", userNames);
+      peerNamesRef.current = { ...peerNamesRef.current, ...userNames };
+      setPeerNames((prev) => ({ ...prev, ...userNames }));
+    });
+
     // Listen for other users joining
     socketRef.current.on(
       "user-connected",
       ({ userId: callerId, userName: callerName }) => {
         console.log("User connected:", callerId, callerName);
+        // Store peer name
+        peerNamesRef.current[callerId] = callerName;
+        setPeerNames((prev) => ({ ...prev, [callerId]: callerName }));
         if (localStream) {
           connectToPeer(callerId, localStream, true);
         }
@@ -149,6 +161,12 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
           delete newStates[disconnectedUserId];
           return newStates;
         });
+        setPeerNames((prev) => {
+          const newNames = { ...prev };
+          delete newNames[disconnectedUserId];
+          return newNames;
+        });
+        delete peerNamesRef.current[disconnectedUserId];
       }
     });
 
@@ -602,6 +620,7 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
     localStream,
     screenStream,
     peers,
+    peerNames,
     peerStates,
     audioEnabled,
     videoEnabled,

@@ -212,11 +212,22 @@ io.on("connection", (socket) => {
       (id) => id !== userId,
     );
 
+    // Get user names for existing users
+    const userNames = {};
+    roomUsers.forEach((id) => {
+      if (rooms.get(roomId).has(id)) {
+        userNames[id] = rooms.get(roomId).get(id).userName;
+      }
+    });
+
     // Notify existing users
     socket.to(roomId).emit("user-connected", { userId, userName });
 
     // Send current users to new user
     socket.emit("room-users", roomUsers);
+
+    // Send user names to new user
+    socket.emit("user-names", userNames);
 
     // Send meeting settings to user
     if (meetingSettings.has(roomId)) {
