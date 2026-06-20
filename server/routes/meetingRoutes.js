@@ -262,4 +262,31 @@ router.get("/details/:meetingId", async (req, res) => {
   }
 });
 
+// Get meeting status
+router.get("/status/:meetingId", async (req, res) => {
+  try {
+    const meeting = await Meeting.findOne({
+      meetingId: req.params.meetingId,
+    });
+
+    if (!meeting) {
+      return res.status(404).json({
+        success: false,
+        message: "Meeting not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      status: meeting.status,
+    });
+  } catch (error) {
+    console.error("Error fetching meeting status:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching meeting status",
+    });
+  }
+});
+
 export default router;

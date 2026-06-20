@@ -53,11 +53,55 @@ const meetingTimers = new Map();
 // Meeting settings per room
 const meetingSettings = new Map();
 
+// Auto-start scheduled meetings
+const autoStartScheduledMeetings = async () => {
+  try {
+    const now = new Date();
+    const scheduledMeetings = await Meeting.find({
+      type: "scheduled",
+      status: "scheduled",
+      scheduledDate: { $lte: now },
+    });
+
+    for (const meeting of scheduledMeetings) {
+      // Parse scheduled time to get the full scheduled datetime
+      const scheduledDateTime = new Date(meeting.scheduledDate);
+      const [hours, minutes] = meeting.scheduledTime.split(":");
+      scheduledDateTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+
+      // If scheduled time has passed, activate the meeting
+      if (scheduledDateTime <= now) {
+        await Meeting.findOneAndUpdate(
+          { meetingId: meeting.meetingId },
+          { status: "active", startTime: new Date() },
+        );
+        console.log(`Auto-started meeting ${meeting.meetingId}`);
+      }
+    }
+  } catch (error) {
+    console.error("Error auto-starting scheduled meetings:", error);
+  }
+};
+
+// Check every minute for scheduled meetings to start
+setInterval(autoStartScheduledMeetings, 60000);
+
 io.on("connection", (socket) => {
   console.log(`User connected: ${socket.id}`);
 
   // Room join logic
-  socket.on("join-room", (roomId, userId, userName) => {
+  socket.on("join-room", async (roomId, userId, userName) => {
+    // Check if meeting has ended
+    try {
+      const meeting = await Meeting.findOne({ meetingId: roomId });
+      if (meeting && meeting.status === "ended") {
+        socket.emit("meeting-ended", { roomId, reason: "already_ended" });
+        return;
+      }
+    } catch (error) {
+      console.error("Error checking meeting status:", error);
+    }
+
     socket.join(roomId);
 
     // Initialize room if not exists

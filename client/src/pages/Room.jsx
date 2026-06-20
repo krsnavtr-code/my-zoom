@@ -7,6 +7,7 @@ import useWebRTC from "../hooks/useWebRTC";
 import Video from "../components/Video";
 import Chat from "../components/Chat";
 import Participants from "../components/Participants";
+import Modal from "../components/Modal";
 
 const Room = () => {
   const { id: roomId } = useParams();
@@ -23,15 +24,51 @@ const Room = () => {
   const [handRaised, setHandRaised] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [socketReady, setSocketReady] = useState(false);
+  const [meetingStatus, setMeetingStatus] = useState(null);
+  const [modal, setModal] = useState({
+    isOpen: false,
+    title: "",
+    message: "",
+    type: "info",
+  });
   const socketRef = useRef(null);
 
-  // Initialize socket once
+  // Check meeting status before allowing join
   useEffect(() => {
+    const checkMeetingStatus = async () => {
+      try {
+        const response = await axios.get(
+          `${import.meta.env.VITE_API_URL}/api/meeting/status/${roomId}`,
+        );
+        setMeetingStatus(response.data.status);
+
+        if (response.data.status === "ended") {
+          setModal({
+            isOpen: true,
+            title: "Meeting Ended",
+            message: "This meeting has already ended. You cannot join it.",
+            type: "error",
+          });
+          return;
+        }
+      } catch (error) {
+        console.error("Error checking meeting status:", error);
+        // If error, allow join (meeting might not exist yet)
+      }
+    };
+
+    checkMeetingStatus();
+  }, [roomId, navigate]);
+
+  // Initialize socket once (only if meeting is not ended)
+  useEffect(() => {
+    if (meetingStatus === "ended") return;
+
     if (!socketRef.current) {
       socketRef.current = io(import.meta.env.VITE_API_URL);
       setSocketReady(true);
     }
-  }, []);
+  }, [meetingStatus]);
 
   const {
     localStream,
@@ -50,10 +87,16 @@ const Room = () => {
     toggleScreenShare,
     toggleRecording,
     leaveRoom,
-  } = useWebRTC(roomId, userId, userName, socketRef.current);
+  } = useWebRTC(
+    roomId,
+    userId,
+    userName,
+    meetingStatus !== "ended" ? socketRef.current : null,
+  );
 
   useEffect(() => {
     if (!socketReady) return;
+    if (meetingStatus === "ended") return;
 
     // Get participant data from localStorage (guest users)
     const participantData = localStorage.getItem("participant");
@@ -75,10 +118,11 @@ const Room = () => {
         setUserName("Guest");
       }
     }
-  }, [socketReady]);
+  }, [socketReady, meetingStatus]);
 
   useEffect(() => {
     if (!socketRef.current) return;
+    if (meetingStatus === "ended") return;
 
     // Listen for meeting settings
     socketRef.current.on("meeting-settings", (settings) => {
@@ -141,6 +185,22 @@ const Room = () => {
         isLocked ? "Network encrypted and locked." : "Network unlocked.",
         "info",
       );
+    });
+
+    // Listen for meeting ended (when trying to join an ended meeting)
+    socketRef.current.on("meeting-ended", ({ reason }) => {
+      if (reason === "already_ended") {
+        setModal({
+          isOpen: true,
+          title: "Meeting Ended",
+          message: "This meeting has already ended. You cannot join it.",
+          type: "error",
+        });
+        setTimeout(() => {
+          leaveRoom();
+          navigate("/dashboard");
+        }, 3000);
+      }
     });
 
     // Request message history
@@ -314,6 +374,23 @@ const Room = () => {
             Awaiting hardware permissions for audiovisual matrix.
           </p>
         </div>
+      </div>
+    );
+  }
+
+  // Don't render meeting UI if meeting is ended
+  if (meetingStatus === "ended") {
+    return (
+      <div className="min-h-screen bg-[#050508] text-white font-sans">
+        <Modal
+          isOpen={modal.isOpen}
+          onClose={() => setModal({ ...modal, isOpen: false })}
+          onConfirm={() => navigate("/dashboard")}
+          title={modal.title}
+          message={modal.message}
+          type={modal.type}
+          confirmText="Return to Dashboard"
+        />
       </div>
     );
   }
@@ -540,7 +617,7 @@ const Room = () => {
                     <div className="absolute inset-0 bg-[#0a0a0f] flex items-center justify-center">
                       <div className="w-20 h-20 bg-gradient-to-tr from-cyan-600/30 to-blue-600/30 border border-cyan-500/50 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(6,182,212,0.3)]">
                         <span className="text-cyan-400 text-3xl font-bold font-mono">
-                          {userName.charAt(0).toUpperCase()}
+                          {userName ? userName.charAt(0).toUpperCase() : "U"}
                         </span>
                       </div>
                     </div>
