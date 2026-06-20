@@ -234,7 +234,18 @@ const Room = () => {
           toggleVideo();
           break;
         case "s":
-          toggleScreenShare();
+          if (isScreenSharing) {
+            stopScreenShare();
+          } else if (isHost) {
+            startScreenShare();
+          } else {
+            socketRef.current?.emit("request-screen-share", {
+              roomId,
+              userId,
+              userName,
+            });
+            addNotification("Screen share request sent to host.", "info");
+          }
           break;
         default:
           break;
@@ -265,7 +276,8 @@ const Room = () => {
   }, [
     toggleAudio,
     toggleVideo,
-    toggleScreenShare,
+    startScreenShare,
+    stopScreenShare,
     userId,
     meetingSettings,
     roomId,
