@@ -31,63 +31,66 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
       });
     }
 
-    // Get local media stream
-    navigator.mediaDevices
-      .getUserMedia({ video: true, audio: true })
-      .then((stream) => {
-        // Ensure stream is ready before setting state
-        if (stream.getTracks().length > 0) {
-          setLocalStream(stream);
-          if (userVideoRef.current) {
-            userVideoRef.current.srcObject = stream;
+    // Don't initialize if socket is null
+    if (!socketRef.current) {
+      console.error("Socket is null, cannot initialize WebRTC");
+      return;
+    }
+
+    // Set up socket listeners BEFORE joining room
+    socketRef.current.on("room-users", (existingUsers) => {
+      console.log("Existing users in room:", existingUsers);
+      // Delay peer connections to ensure stream is fully ready
+      setTimeout(() => {
+        existingUsers.forEach((existingUserId) => {
+          if (localStream) {
+            connectToPeer(existingUserId, localStream, false);
           }
+        });
+      }, 100);
+    });
 
-          // Join room with user name after stream is ready
-          socketRef.current.emit("join-room", roomId, userId, userName);
-
-          // Listen for existing users in room
-          socketRef.current.on("room-users", (existingUsers) => {
-            // Delay peer connections to ensure stream is fully ready
-            setTimeout(() => {
-              existingUsers.forEach((existingUserId) => {
-                connectToPeer(existingUserId, stream, false);
-              });
-            }, 100);
-          });
-
-          // Listen for other users joining
-          socketRef.current.on(
-            "user-connected",
-            ({ userId: callerId, userName: callerName }) => {
-              connectToPeer(callerId, stream, true);
-            },
-          );
-        } else {
-          console.error("Stream has no tracks");
+    // Listen for other users joining
+    socketRef.current.on(
+      "user-connected",
+      ({ userId: callerId, userName: callerName }) => {
+        console.log("User connected:", callerId, callerName);
+        if (localStream) {
+          connectToPeer(callerId, localStream, true);
         }
-      })
-      .catch((err) => {
-        console.error("Error accessing media devices:", err);
-      });
+      },
+    );
 
     // Listen for incoming calls
     socketRef.current.on("call-user", ({ signal, callerId }) => {
+      console.log("Received call from:", callerId);
       if (peersRef.current[callerId]) {
         peersRef.current[callerId].signal(signal);
+      } else {
+        console.error("Peer not found for caller:", callerId);
       }
     });
 
     // Listen for call accepted
     socketRef.current.on("call-accepted", ({ signal, callId }) => {
+      console.log("Call accepted by:", callId);
       if (peersRef.current[callId]) {
         peersRef.current[callId].signal(signal);
+      } else {
+        console.error("Peer not found for call:", callId);
       }
     });
 
-    // Listen for ICE candidates
+    // Listen for ICE candidates (not needed with trickle: true, but kept for compatibility)
     socketRef.current.on("ice-candidate", ({ candidate, from }) => {
       if (peersRef.current[from]) {
-        peersRef.current[from].addIceCandidate(new RTCIceCandidate(candidate));
+        try {
+          peersRef.current[from].addIceCandidate(
+            new RTCIceCandidate(candidate),
+          );
+        } catch (err) {
+          console.error("Error adding ICE candidate:", err);
+        }
       }
     });
 
@@ -132,6 +135,7 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
 
     // Listen for user disconnected
     socketRef.current.on("user-disconnected", (disconnectedUserId) => {
+      console.log("User disconnected:", disconnectedUserId);
       if (peersRef.current[disconnectedUserId]) {
         peersRef.current[disconnectedUserId].destroy();
         delete peersRef.current[disconnectedUserId];
@@ -147,6 +151,28 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
         });
       }
     });
+
+    // Get local media stream
+    navigator.mediaDevices
+      .getUserMedia({ video: true, audio: true })
+      .then((stream) => {
+        console.log("Got local stream");
+        // Ensure stream is ready before setting state
+        if (stream.getTracks().length > 0) {
+          setLocalStream(stream);
+          if (userVideoRef.current) {
+            userVideoRef.current.srcObject = stream;
+          }
+
+          // Join room with user name after stream is ready and listeners are set up
+          socketRef.current.emit("join-room", roomId, userId, userName);
+        } else {
+          console.error("Stream has no tracks");
+        }
+      })
+      .catch((err) => {
+        console.error("Error accessing media devices:", err);
+      });
 
     return () => {
       // Cleanup

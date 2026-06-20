@@ -91,6 +91,10 @@ io.on("connection", (socket) => {
 
   // Room join logic
   socket.on("join-room", async (roomId, userId, userName) => {
+    // Store roomId in socket for use in other handlers
+    socket.roomId = roomId;
+    socket.userId = userId;
+
     // Check if meeting has ended
     try {
       const meeting = await Meeting.findOne({ meetingId: roomId });
@@ -234,18 +238,64 @@ io.on("connection", (socket) => {
 
   // WebRTC signaling
   socket.on("call-user", ({ userToCall, signalData, from }) => {
-    socket
-      .to(userToCall)
-      .emit("call-user", { signal: signalData, callerId: from });
+    const roomId = socket.roomId;
+    if (!roomId) {
+      console.error("No roomId in socket");
+      return;
+    }
+    // Get the socket ID for the target user
+    if (rooms.has(roomId)) {
+      const room = rooms.get(roomId);
+      const targetUser = room.get(userToCall);
+      if (targetUser) {
+        socket
+          .to(targetUser.socketId)
+          .emit("call-user", { signal: signalData, callerId: from });
+      } else {
+        console.error("User not found in room:", userToCall);
+      }
+    }
   });
 
   socket.on("call-accepted", ({ signal, callId }) => {
-    socket.to(callId).emit("call-accepted", { signal, callId });
+    const roomId = socket.roomId;
+    if (!roomId) {
+      console.error("No roomId in socket");
+      return;
+    }
+    // Get the socket ID for the target user
+    if (rooms.has(roomId)) {
+      const room = rooms.get(roomId);
+      const targetUser = room.get(callId);
+      if (targetUser) {
+        socket
+          .to(targetUser.socketId)
+          .emit("call-accepted", { signal, callId });
+      } else {
+        console.error("User not found in room:", callId);
+      }
+    }
   });
 
   // ICE candidate exchange (for trickle ICE)
   socket.on("ice-candidate", ({ candidate, to }) => {
-    socket.to(to).emit("ice-candidate", { candidate, from: socket.id });
+    const roomId = socket.roomId;
+    if (!roomId) {
+      console.error("No roomId in socket");
+      return;
+    }
+    // Get the socket ID for the target user
+    if (rooms.has(roomId)) {
+      const room = rooms.get(roomId);
+      const targetUser = room.get(to);
+      if (targetUser) {
+        socket
+          .to(targetUser.socketId)
+          .emit("ice-candidate", { candidate, from: socket.id });
+      } else {
+        console.error("User not found in room:", to);
+      }
+    }
   });
 
   // Audio state sync
@@ -472,7 +522,7 @@ io.on("connection", (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 7002;
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });

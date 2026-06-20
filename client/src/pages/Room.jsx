@@ -141,7 +141,7 @@ const Room = () => {
       setIsHost(settings.hostId === userId);
     });
 
-    // Listen for user joined
+    // Listen for user joined (for notification only - WebRTC handled in useWebRTC)
     socketRef.current.on(
       "user-connected",
       ({ userId: joinedUserId, userName: joinedUserName }) => {
@@ -152,7 +152,7 @@ const Room = () => {
       },
     );
 
-    // Listen for user left
+    // Listen for user left (for notification only - WebRTC handled in useWebRTC)
     socketRef.current.on("user-disconnected", (leftUserId) => {
       addNotification("A node has disconnected from the grid.", "info");
     });
