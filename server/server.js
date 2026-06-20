@@ -250,61 +250,44 @@ io.on("connection", (socket) => {
   // WebRTC signaling
   socket.on("call-user", ({ userToCall, signalData, from }) => {
     const roomId = socket.roomId;
-    if (!roomId) {
-      console.error("No roomId in socket");
-      return;
-    }
-    // Get the socket ID for the target user
+    if (!roomId) return;
+
     if (rooms.has(roomId)) {
-      const room = rooms.get(roomId);
-      const targetUser = room.get(userToCall);
+      const targetUser = rooms.get(roomId).get(userToCall);
       if (targetUser) {
         socket
           .to(targetUser.socketId)
           .emit("call-user", { signal: signalData, callerId: from });
-      } else {
-        console.error("User not found in room:", userToCall);
       }
     }
   });
 
   socket.on("call-accepted", ({ signal, callId }) => {
     const roomId = socket.roomId;
-    if (!roomId) {
-      console.error("No roomId in socket");
-      return;
-    }
-    // Get the socket ID for the target user
+    if (!roomId) return;
+
     if (rooms.has(roomId)) {
-      const room = rooms.get(roomId);
-      const targetUser = room.get(callId);
+      const targetUser = rooms.get(roomId).get(callId);
       if (targetUser) {
+        // YAHAN FIX HAI: 'callId' ki jagah 'socket.userId' bhejna zaroori hai
         socket
           .to(targetUser.socketId)
           .emit("call-accepted", { signal, callId: socket.userId });
-      } else {
-        console.error("User not found in room:", callId);
       }
     }
   });
 
-  // ICE candidate exchange (for trickle ICE)
   socket.on("ice-candidate", ({ candidate, to }) => {
     const roomId = socket.roomId;
-    if (!roomId) {
-      console.error("No roomId in socket");
-      return;
-    }
-    // Get the socket ID for the target user
+    if (!roomId) return;
+
     if (rooms.has(roomId)) {
-      const room = rooms.get(roomId);
-      const targetUser = room.get(to);
+      const targetUser = rooms.get(roomId).get(to);
       if (targetUser) {
+        // YAHAN FIX HAI: 'from: socket.id' ki jagah 'from: socket.userId' aayega
         socket
           .to(targetUser.socketId)
           .emit("ice-candidate", { candidate, from: socket.userId });
-      } else {
-        console.error("User not found in room:", to);
       }
     }
   });

@@ -19,25 +19,33 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
   const peerNamesRef = useRef({});
 
   useEffect(() => {
-    // 🟢 FIX: Do NOT create internal fallback sockets. Wait for Room.jsx socket.
     if (!externalSocket || !userId) return;
 
-    // Start video/audio access
+    let isMounted = true;
+
     navigator.mediaDevices
       .getUserMedia({ video: true, audio: true })
       .then((stream) => {
+        if (!isMounted) return;
+        console.log("🟢 1. Local stream ready, joining room...");
         setLocalStream(stream);
         localStreamRef.current = stream;
+
         if (userVideoRef.current) {
           userVideoRef.current.srcObject = stream;
         }
 
-        // Emit join AFTER stream is ready
         externalSocket.emit("join-room", roomId, userId, userName);
       })
-      .catch((err) => console.error("Error accessing media devices:", err));
+      .catch((err) => {
+        console.error("🔴 Error accessing media devices:", err);
+        alert(
+          "Camera/Mic Error: Please allow permissions or check HTTP/HTTPS.",
+        );
+      });
 
     externalSocket.on("room-users", (existingUsers) => {
+      console.log("👥 2. Received users in room:", existingUsers);
       existingUsers.forEach((existingUserId) => {
         if (localStreamRef.current) {
           connectToPeer(
@@ -58,8 +66,10 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
     externalSocket.on(
       "user-connected",
       ({ userId: callerId, userName: callerName }) => {
+        console.log("👋 3. New user connected:", callerName, callerId);
         peerNamesRef.current[callerId] = callerName;
         setPeerNames((prev) => ({ ...prev, [callerId]: callerName }));
+
         if (localStreamRef.current) {
           connectToPeer(callerId, localStreamRef.current, true, externalSocket);
         }
@@ -67,6 +77,7 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
     );
 
     externalSocket.on("call-user", ({ signal, callerId }) => {
+      console.log("📞 4. Incoming call from:", callerId);
       let peer = peersRef.current[callerId];
       if (!peer && localStreamRef.current) {
         peer = connectToPeer(
@@ -76,16 +87,20 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
           externalSocket,
         );
       }
-      if (peer) peer.signal(signal);
+      if (peer) {
+        peer.signal(signal);
+      }
     });
 
     externalSocket.on("call-accepted", ({ signal, callId }) => {
+      console.log("✅ 5. Call accepted by:", callId);
       if (peersRef.current[callId]) {
         peersRef.current[callId].signal(signal);
       }
     });
 
     externalSocket.on("user-disconnected", (disconnectedUserId) => {
+      console.log("❌ 6. User disconnected:", disconnectedUserId);
       if (peersRef.current[disconnectedUserId]) {
         peersRef.current[disconnectedUserId].destroy();
         delete peersRef.current[disconnectedUserId];
@@ -103,6 +118,7 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
     });
 
     return () => {
+      isMounted = false;
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => track.stop());
         localStreamRef.current = null;
@@ -120,8 +136,9 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
   }, [roomId, userId, userName, externalSocket]);
 
   const connectToPeer = (peerId, stream, isInitiator, socket) => {
-    if (!stream || !stream.active) return;
     if (peersRef.current[peerId]) return peersRef.current[peerId];
+
+    console.log(`🔗 Creating peer for ${peerId} (Initiator: ${isInitiator})`);
 
     try {
       const peer = new SimplePeer({
@@ -137,6 +154,7 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
       });
 
       peer.on("signal", (signal) => {
+        console.log(`📡 Sending signal to ${peerId} (Type: ${signal.type})`);
         if (isInitiator) {
           socket.emit("call-user", {
             userToCall: peerId,
@@ -149,6 +167,7 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
       });
 
       peer.on("stream", (userStream) => {
+        console.log(`📺 Received remote video stream from ${peerId}!`);
         setPeers((prev) => ({ ...prev, [peerId]: userStream }));
         setPeerStates((prev) => ({
           ...prev,
@@ -156,21 +175,13 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
         }));
       });
 
-      peer.on("close", () => {
-        if (peersRef.current[peerId]) {
-          delete peersRef.current[peerId];
-          setPeers((prev) => {
-            const newPeers = { ...prev };
-            delete newPeers[peerId];
-            return newPeers;
-          });
-        }
-      });
+      peer.on("error", (err) => console.error("Peer Error:", err));
 
       peersRef.current[peerId] = peer;
       return peer;
     } catch (err) {
-      console.error("Error creating peer connection:", err);
+      console.error("🔴 SimplePeer Crash:", err);
+      alert(`Vite/SimplePeer Error: ${err.message}. Open console for details.`);
     }
   };
 
@@ -440,6 +451,8 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
       startRecording();
     }
   };
+
+
 
   const leaveRoom = () => {
     if (localStream) localStream.getTracks().forEach((track) => track.stop());
