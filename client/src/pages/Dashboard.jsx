@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { API_URL } from "../config";
 
 const Dashboard = () => {
   const [user, setUser] = useState(null);
@@ -49,9 +50,7 @@ const Dashboard = () => {
   const fetchUserMeetings = async (userId) => {
     setLoadingMeetings(true);
     try {
-      const response = await axios.get(
-        `${import.meta.env.VITE_API_URL}/api/meeting/user/${userId}`,
-      );
+      const response = await axios.get(`${API_URL}/api/meeting/user/${userId}`);
       setMeetings(response.data.meetings);
     } catch (error) {
       console.error("Error fetching meetings:", error);
@@ -82,9 +81,7 @@ const Dashboard = () => {
     if (!meetingToEnd) return;
 
     try {
-      await axios.put(
-        `${import.meta.env.VITE_API_URL}/api/meeting/end/${meetingToEnd}`,
-      );
+      await axios.put(`${API_URL}/api/meeting/end/${meetingToEnd}`);
 
       // Refresh meetings list
       const userData = localStorage.getItem("user");
@@ -101,9 +98,7 @@ const Dashboard = () => {
 
   const handleStartNow = async (meetingId) => {
     try {
-      await axios.put(
-        `${import.meta.env.VITE_API_URL}/api/meeting/update-schedule/${meetingId}`,
-      );
+      await axios.put(`${API_URL}/api/meeting/update-schedule/${meetingId}`);
 
       // Refresh meetings list
       const userData = localStorage.getItem("user");
@@ -132,7 +127,7 @@ const Dashboard = () => {
 
     try {
       const response = await axios.get(
-        `${import.meta.env.VITE_API_URL}/api/meeting/details/${meetingId}`,
+        `${API_URL}/api/meeting/details/${meetingId}`,
       );
       setMeetingDetails((prev) => ({
         ...prev,
@@ -155,7 +150,7 @@ const Dashboard = () => {
     const userData = localStorage.getItem("user");
     if (userData) {
       try {
-        await axios.post(`${import.meta.env.VITE_API_URL}/api/meeting/create`, {
+        await axios.post(`${API_URL}/api/meeting/create`, {
           meetingId: newMeetingId,
           userId: JSON.parse(userData).id,
           type: meetingType,

@@ -36,7 +36,7 @@ app.use("/api/meeting", meetingRoutes);
 // Socket.io setup for Real-time communication
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173", // Vite ka default port
+    origin: "*", // Allow any origin for local network/tunnel connections
     methods: ["GET", "POST"],
   },
 });

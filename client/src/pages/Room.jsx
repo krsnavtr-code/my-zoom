@@ -3,6 +3,7 @@ import { useEffect, useState, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { io } from "socket.io-client";
 import axios from "axios";
+import { API_URL } from "../config";
 import useWebRTC from "../hooks/useWebRTC";
 import Video from "../components/Video";
 import Chat from "../components/Chat";
@@ -49,7 +50,7 @@ const Room = () => {
       // Check meeting status
       try {
         const response = await axios.get(
-          `${import.meta.env.VITE_API_URL}/api/meeting/status/${roomId}`,
+          `${API_URL}/api/meeting/status/${roomId}`,
         );
         setMeetingStatus(response.data.status);
 
@@ -76,7 +77,7 @@ const Room = () => {
     if (meetingStatus === "ended") return;
 
     if (!socketRef.current) {
-      socketRef.current = io(import.meta.env.VITE_API_URL);
+      socketRef.current = io(API_URL);
       setSocketReady(true);
     }
   }, [meetingStatus]);
@@ -338,7 +339,7 @@ const Room = () => {
     if (participantId) {
       try {
         await axios.put(
-          `${import.meta.env.VITE_API_URL}/api/meeting/participant/${participantId}/leave`,
+          `${API_URL}/api/meeting/participant/${participantId}/leave`,
         );
       } catch (error) {
         console.error("Error updating leave time:", error);

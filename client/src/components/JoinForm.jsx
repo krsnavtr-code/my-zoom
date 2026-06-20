@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
+import { API_URL } from "../config";
 
 const JoinForm = () => {
   const { id: roomId } = useParams();
@@ -75,7 +76,7 @@ const JoinForm = () => {
     try {
       const deviceFingerprint = generateDeviceFingerprint();
       const response = await axios.post(
-        `${import.meta.env.VITE_API_URL}/api/meeting/participant/check`,
+        `${API_URL}/api/meeting/participant/check`,
         { deviceFingerprint },
       );
 
@@ -101,18 +102,15 @@ const JoinForm = () => {
       const { browser, os } = detectBrowserAndOS();
 
       // Save participant to database with user's info
-      const response = await axios.post(
-        `${import.meta.env.VITE_API_URL}/api/meeting/participant`,
-        {
-          meetingId: roomId,
-          name: user.name,
-          email: user.email,
-          phone: user.phone || "0000000000", // Default if phone not available
-          deviceFingerprint,
-          browser,
-          os,
-        },
-      );
+      const response = await axios.post(`${API_URL}/api/meeting/participant`, {
+        meetingId: roomId,
+        name: user.name,
+        email: user.email,
+        phone: user.phone || "0000000000", // Default if phone not available
+        deviceFingerprint,
+        browser,
+        os,
+      });
 
       // Store participant info in localStorage
       localStorage.setItem(
@@ -182,18 +180,15 @@ const JoinForm = () => {
       const { browser, os } = detectBrowserAndOS();
 
       // Save participant to database
-      const response = await axios.post(
-        `${import.meta.env.VITE_API_URL}/api/meeting/participant`,
-        {
-          meetingId: roomId,
-          name: formData.name,
-          email: formData.email,
-          phone: formData.phone,
-          deviceFingerprint,
-          browser,
-          os,
-        },
-      );
+      const response = await axios.post(`${API_URL}/api/meeting/participant`, {
+        meetingId: roomId,
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        deviceFingerprint,
+        browser,
+        os,
+      });
 
       // Store participant info in localStorage
       localStorage.setItem(

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import SimplePeer from "simple-peer";
 import { io } from "socket.io-client";
+import { API_URL } from "../config";
 
 const useWebRTC = (roomId, userId, userName, externalSocket) => {
   const [peers, setPeers] = useState({});
@@ -27,7 +28,7 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
   useEffect(() => {
     // Only initialize socket if not provided externally
     if (!externalSocket) {
-      socketRef.current = io(import.meta.env.VITE_API_URL, {
+      socketRef.current = io(API_URL, {
         reconnection: true,
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,

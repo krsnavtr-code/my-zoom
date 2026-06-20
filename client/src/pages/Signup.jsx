@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
+import { API_URL } from "../config";
 
 const Signup = () => {
   const [formData, setFormData] = useState({
@@ -39,14 +40,11 @@ const Signup = () => {
     setLoading(true);
 
     try {
-      const response = await axios.post(
-        `${import.meta.env.VITE_API_URL}/api/auth/register`,
-        {
-          name: formData.name,
-          email: formData.email,
-          password: formData.password,
-        },
-      );
+      const response = await axios.post(`${API_URL}/api/auth/register`, {
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+      });
 
       // Store token and user data in localStorage
       localStorage.setItem("token", response.data.token);
