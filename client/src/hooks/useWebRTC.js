@@ -17,6 +17,9 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
   const userVideoRef = useRef(null);
   const peersRef = useRef({});
   const peerNamesRef = useRef({});
+  const mediaRecorderRef = useRef(null);
+  const recordedChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
 
   useEffect(() => {
     if (!externalSocket || !userId) return;
@@ -42,7 +45,6 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
         localStreamRef.current = stream;
         if (userVideoRef.current) userVideoRef.current.srcObject = stream;
 
-        // Step 1: Join the room
         externalSocket.emit("join-room", roomId, userId, userName);
       })
       .catch((err) => {
@@ -51,7 +53,6 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
 
     externalSocket.on("room-users", (existingUsers) => {
       console.log("👥 2. Received users in room:", existingUsers);
-
       existingUsers.forEach((existingUserId) => {
         if (localStreamRef.current) {
           connectToPeer(
@@ -62,7 +63,6 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
           );
         }
       });
-
       console.log("📢 3. Ready to receive calls. Informing others...");
       externalSocket.emit("ready-for-calls", roomId, userId, userName);
     });
@@ -75,6 +75,7 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
         );
         peerNamesRef.current[callerId] = callerName;
         setPeerNames((prev) => ({ ...prev, [callerId]: callerName }));
+
         if (peersRef.current[callerId]) {
           console.log(
             "♻️ Destroying old ghost connection for reloaded user...",
@@ -112,12 +113,6 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
       }
     });
 
-    externalSocket.on("ice-candidate", ({ candidate, from }) => {
-      if (peersRef.current[from]) {
-        peersRef.current[from].addIceCandidate(new RTCIceCandidate(candidate));
-      }
-    });
-
     externalSocket.on("user-disconnected", (disconnectedUserId) => {
       console.log("❌ User disconnected:", disconnectedUserId);
       if (peersRef.current[disconnectedUserId]) {
@@ -131,6 +126,37 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
       }
     });
 
+    // Toggle Receivers
+    externalSocket.on(
+      "user-audio-toggled",
+      ({ userId: toggledUserId, audioEnabled: isEnabled }) => {
+        setPeerStates((prev) => ({
+          ...prev,
+          [toggledUserId]: { ...prev[toggledUserId], audioEnabled: isEnabled },
+        }));
+      },
+    );
+
+    externalSocket.on(
+      "user-video-toggled",
+      ({ userId: toggledUserId, videoEnabled: isEnabled }) => {
+        setPeerStates((prev) => ({
+          ...prev,
+          [toggledUserId]: { ...prev[toggledUserId], videoEnabled: isEnabled },
+        }));
+      },
+    );
+
+    externalSocket.on(
+      "user-screen-share-toggled",
+      ({ userId: sharerId, isScreenSharing: isSharing }) => {
+        setPeerStates((prev) => ({
+          ...prev,
+          [sharerId]: { ...prev[sharerId], isScreenSharing: isSharing },
+        }));
+      },
+    );
+
     return () => {
       isMounted = false;
       if (localStreamRef.current) {
@@ -143,14 +169,15 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
       externalSocket.off("user-ready");
       externalSocket.off("call-user");
       externalSocket.off("call-accepted");
-      externalSocket.off("ice-candidate");
       externalSocket.off("user-disconnected");
+      externalSocket.off("user-audio-toggled");
+      externalSocket.off("user-video-toggled");
+      externalSocket.off("user-screen-share-toggled");
     };
   }, [roomId, userId, userName, externalSocket]);
 
   const connectToPeer = (peerId, stream, isInitiator, socket) => {
     if (peersRef.current[peerId]) return peersRef.current[peerId];
-
     console.log(`🔗 Creating peer for ${peerId} (Initiator: ${isInitiator})`);
 
     try {
@@ -158,16 +185,10 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
         initiator: isInitiator,
         trickle: true,
         stream: stream,
-        config: {
-          iceServers: [
-            { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:stun1.l.google.com:19302" },
-          ],
-        },
+        config: { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] },
       });
 
       peer.on("signal", (signal) => {
-        console.log(`📡 Sending signal to ${peerId} (Type: ${signal.type})`);
         if (isInitiator) {
           socket.emit("call-user", {
             userToCall: peerId,
@@ -189,160 +210,110 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
       });
 
       peer.on("error", (err) => console.error("Peer Error:", err));
-
       peersRef.current[peerId] = peer;
       return peer;
     } catch (err) {
       console.error("🔴 SimplePeer Crash:", err);
-      alert(`Vite/SimplePeer Error: ${err.message}. Open console for details.`);
     }
   };
 
-  const toggleAudio = async () => {
-    if (localStream) {
-      const audioTrack = localStream.getAudioTracks()[0];
-      if (audioTrack) {
-        if (audioTrack.enabled) {
-          // Disable and stop the track to release hardware
-          audioTrack.enabled = false;
-          audioTrack.stop();
-          setAudioEnabled(false);
-        } else {
-          // Re-enable by requesting new audio track
-          try {
-            const newAudioStream = await navigator.mediaDevices.getUserMedia({
-              audio: true,
-            });
-            const newAudioTrack = newAudioStream.getAudioTracks()[0];
-
-            // Replace the old track with the new one
-            localStream.removeTrack(audioTrack);
-            localStream.addTrack(newAudioTrack);
-
-            // Update video element with new stream
-            if (userVideoRef.current) {
-              userVideoRef.current.srcObject = localStream;
-            }
-
-            // Replace track in all peer connections
-            Object.values(peersRef.current).forEach((peer) => {
-              if (peer._pc) {
-                const sender = peer._pc
-                  .getSenders()
-                  .find((s) => s.track.kind === "audio");
-                if (sender) {
-                  sender.replaceTrack(newAudioTrack);
-                }
-              }
-            });
-
-            setAudioEnabled(true);
-          } catch (err) {
-            console.error("Error re-enabling audio:", err);
-          }
-        }
-
-        // Broadcast to other users
-        socketRef.current?.emit("toggle-audio", {
-          roomId,
-          userId,
-          audioEnabled: !audioEnabled,
-        });
-      }
+  // --- AUDIO LOGIC ---
+  const toggleAudio = () => {
+    if (!localStream) return;
+    const audioTrack = localStream.getAudioTracks()[0];
+    if (audioTrack) {
+      audioTrack.enabled = !audioTrack.enabled;
+      setAudioEnabled(audioTrack.enabled);
+      externalSocket?.emit("toggle-audio", {
+        roomId,
+        userId,
+        audioEnabled: audioTrack.enabled,
+      });
     }
   };
 
+  // --- VIDEO LOGIC (BUG FIXED) ---
   const toggleVideo = async () => {
-    if (localStream) {
-      const videoTrack = localStream.getVideoTracks()[0];
-      if (videoTrack) {
-        if (videoTrack.enabled) {
-          // Disable and stop the track to release hardware
-          videoTrack.enabled = false;
-          videoTrack.stop();
+    if (!localStream) return;
+    const videoTrack = localStream.getVideoTracks()[0];
 
-          // Replace with null in all peer connections to fully release
-          Object.values(peersRef.current).forEach((peer) => {
-            if (peer._pc) {
-              const sender = peer._pc
-                .getSenders()
-                .find((s) => s.track.kind === "video");
-              if (sender) {
-                sender.replaceTrack(null);
-              }
-            }
-          });
+    if (videoEnabled && videoTrack) {
+      // Band karne k liye track.enabled false karte hain, null se replace nahi karte
+      videoTrack.enabled = false;
+      videoTrack.stop(); // Camera light band karne ke liye
+      setVideoEnabled(false);
+      externalSocket?.emit("toggle-video", {
+        roomId,
+        userId,
+        videoEnabled: false,
+      });
+    } else {
+      try {
+        const newStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+        });
+        const newVideoTrack = newStream.getVideoTracks()[0];
 
-          setVideoEnabled(false);
-        } else {
-          // Re-enable by requesting new video track
-          try {
-            const newVideoStream = await navigator.mediaDevices.getUserMedia({
-              video: true,
-            });
-            const newVideoTrack = newVideoStream.getVideoTracks()[0];
+        if (videoTrack) {
+          localStream.removeTrack(videoTrack);
+        }
+        localStream.addTrack(newVideoTrack);
 
-            // Replace the old track with the new one in local stream
-            localStream.removeTrack(videoTrack);
-            localStream.addTrack(newVideoTrack);
-
-            // Update video element with new stream
-            if (userVideoRef.current) {
-              userVideoRef.current.srcObject = localStream;
-            }
-
-            // Replace track in all peer connections
-            Object.values(peersRef.current).forEach((peer) => {
-              if (peer._pc) {
-                const sender = peer._pc
-                  .getSenders()
-                  .find((s) => s.track.kind === "video");
-                if (sender) {
-                  sender.replaceTrack(newVideoTrack);
-                }
-              }
-            });
-
-            setVideoEnabled(true);
-          } catch (err) {
-            console.error("Error re-enabling video:", err);
-          }
+        if (userVideoRef.current) {
+          userVideoRef.current.srcObject = localStream;
         }
 
-        // Broadcast to other users
-        socketRef.current?.emit("toggle-video", {
+        Object.values(peersRef.current).forEach((peer) => {
+          if (peer._pc) {
+            // Null error ko handle karne ke liye s.track && lagaya gaya hai
+            const sender = peer._pc
+              .getSenders()
+              .find((s) => s.track && s.track.kind === "video");
+            if (sender) {
+              sender.replaceTrack(newVideoTrack);
+            }
+          }
+        });
+
+        setVideoEnabled(true);
+        externalSocket?.emit("toggle-video", {
           roomId,
           userId,
-          videoEnabled: !videoEnabled,
+          videoEnabled: true,
         });
+      } catch (err) {
+        console.error("Error re-enabling video:", err);
       }
     }
   };
 
+  // --- SCREEN SHARE LOGIC ---
   const startScreenShare = async () => {
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { cursor: "always" },
         audio: true,
       });
-
       setScreenStream(stream);
       setIsScreenSharing(true);
 
-      // Replace video track in all peer connections
       const videoTrack = stream.getVideoTracks()[0];
       Object.values(peersRef.current).forEach((peer) => {
-        const sender = peer._pc
-          .getSenders()
-          .find((s) => s.track.kind === "video");
-        if (sender) {
-          sender.replaceTrack(videoTrack);
+        if (peer._pc) {
+          const sender = peer._pc
+            .getSenders()
+            .find((s) => s.track && s.track.kind === "video");
+          if (sender) sender.replaceTrack(videoTrack);
         }
       });
 
-      // Handle user stopping screen share
-      stream.getVideoTracks()[0].onended = () => {
+      videoTrack.onended = () => {
         stopScreenShare();
+        externalSocket?.emit("toggle-screen-share", {
+          roomId,
+          userId,
+          isScreenSharing: false,
+        });
       };
     } catch (err) {
       console.error("Error starting screen share:", err);
@@ -352,75 +323,61 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
   const stopScreenShare = () => {
     if (screenStream) {
       screenStream.getTracks().forEach((track) => track.stop());
+      setScreenStream(null);
     }
+    setIsScreenSharing(false);
 
-    // Restore camera video track
     if (localStream) {
       const videoTrack = localStream.getVideoTracks()[0];
-      Object.values(peersRef.current).forEach((peer) => {
-        const sender = peer._pc
-          .getSenders()
-          .find((s) => s.track.kind === "video");
-        if (sender) {
-          sender.replaceTrack(videoTrack);
-        }
-      });
+      if (videoTrack) {
+        Object.values(peersRef.current).forEach((peer) => {
+          if (peer._pc) {
+            const sender = peer._pc
+              .getSenders()
+              .find((s) => s.track && s.track.kind === "video");
+            if (sender) sender.replaceTrack(videoTrack);
+          }
+        });
+      }
     }
-
-    setScreenStream(null);
-    setIsScreenSharing(false);
   };
 
   const toggleScreenShare = () => {
     if (isScreenSharing) {
       stopScreenShare();
-      // Broadcast screen share state
-      socketRef.current?.emit("toggle-screen-share", {
+      externalSocket?.emit("toggle-screen-share", {
         roomId,
         userId,
         isScreenSharing: false,
       });
     } else {
-      startScreenShare();
-      // Broadcast screen share state
-      socketRef.current?.emit("toggle-screen-share", {
-        roomId,
-        userId,
-        isScreenSharing: true,
+      startScreenShare().then(() => {
+        externalSocket?.emit("toggle-screen-share", {
+          roomId,
+          userId,
+          isScreenSharing: true,
+        });
       });
     }
   };
 
+  // --- RECORDING LOGIC ---
   const startRecording = () => {
     if (!localStream) return;
-
-    // Create a canvas to mix all streams
     const canvas = document.createElement("canvas");
     canvas.width = 1280;
     canvas.height = 720;
-    const ctx = canvas.getContext("2d");
-
-    // Create a stream from the canvas
     const canvasStream = canvas.captureStream(30);
-
-    // Add audio tracks from local stream
     if (localStream.getAudioTracks().length > 0) {
       canvasStream.addTrack(localStream.getAudioTracks()[0]);
     }
-
-    // Set up MediaRecorder
     mediaRecorderRef.current = new MediaRecorder(canvasStream, {
       mimeType: "video/webm;codecs=vp9",
     });
-
     recordedChunksRef.current = [];
-
-    mediaRecorderRef.current.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        recordedChunksRef.current.push(event.data);
-      }
+    mediaRecorderRef.current.ondataavailable = (e) => {
+      if (e.data.size > 0) recordedChunksRef.current.push(e.data);
     };
-
     mediaRecorderRef.current.onstop = () => {
       const blob = new Blob(recordedChunksRef.current, { type: "video/webm" });
       const url = URL.createObjectURL(blob);
@@ -430,15 +387,12 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
       a.click();
       URL.revokeObjectURL(url);
     };
-
     mediaRecorderRef.current.start();
-
-    // Start timer
     setRecordingTime(0);
-    recordingTimerRef.current = setInterval(() => {
-      setRecordingTime((prev) => prev + 1);
-    }, 1000);
-
+    recordingTimerRef.current = setInterval(
+      () => setRecordingTime((prev) => prev + 1),
+      1000,
+    );
     setIsRecording(true);
   };
 
@@ -449,26 +403,21 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
     ) {
       mediaRecorderRef.current.stop();
     }
-
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current);
-    }
-
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
     setIsRecording(false);
   };
 
   const toggleRecording = () => {
-    if (isRecording) {
-      stopRecording();
-    } else {
-      startRecording();
-    }
+    isRecording ? stopRecording() : startRecording();
   };
 
   const leaveRoom = () => {
     if (localStream) localStream.getTracks().forEach((track) => track.stop());
+    if (screenStream) screenStream.getTracks().forEach((track) => track.stop());
     Object.values(peersRef.current).forEach((peer) => peer.destroy());
+    peersRef.current = {};
     setPeers({});
+    setPeerStates({});
     setLocalStream(null);
   };
 
