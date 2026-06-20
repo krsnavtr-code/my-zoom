@@ -23,7 +23,6 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
 
     let isMounted = true;
 
-    // 🔴 NAYE LOGS: Ye check karenge ki Socket.io server se connect ho bhi raha hai ya nahi
     externalSocket.on("connect", () => {
       console.log("🔌 Socket Connected to Backend! ID:", externalSocket.id);
     });
@@ -38,24 +37,22 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
         console.log(
           `🟢 1. Stream ready. Emitting join-room -> Room:${roomId}, User:${userId}`,
         );
+
         setLocalStream(stream);
         localStreamRef.current = stream;
+        if (userVideoRef.current) userVideoRef.current.srcObject = stream;
 
-        if (userVideoRef.current) {
-          userVideoRef.current.srcObject = stream;
-        }
-
+        // Step 1: Join the room
         externalSocket.emit("join-room", roomId, userId, userName);
       })
       .catch((err) => {
-        console.error("🔴 Error accessing media devices:", err);
-        alert(
-          "Camera/Mic Error: Please allow permissions or check HTTP/HTTPS.",
-        );
+        console.error("🔴 Camera/Mic Error:", err);
       });
 
     externalSocket.on("room-users", (existingUsers) => {
       console.log("👥 2. Received users in room:", existingUsers);
+
+      // Step 2: Naya user sabse pehle as a 'Receiver' (Initiator: false) tayyar hota hai
       existingUsers.forEach((existingUserId) => {
         if (localStreamRef.current) {
           connectToPeer(
@@ -66,17 +63,19 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
           );
         }
       });
+
+      // Step 3: Receiver ready hone ke baad purane users ko announce karta hai ki "Mujhe Call Karo!"
+      console.log("📢 3. Ready to receive calls. Informing others...");
+      externalSocket.emit("ready-for-calls", roomId, userId, userName);
     });
 
-    externalSocket.on("user-names", (userNames) => {
-      peerNamesRef.current = { ...peerNamesRef.current, ...userNames };
-      setPeerNames((prev) => ({ ...prev, ...userNames }));
-    });
-
+    // Step 4: Purane users ko ye sunai dega aur wo Call (Initiator: true) karenge
     externalSocket.on(
-      "user-connected",
+      "user-ready",
       ({ userId: callerId, userName: callerName }) => {
-        console.log("👋 3. New user connected:", callerName, callerId);
+        console.log(
+          `👋 4. New user ${callerName} is ready! Initiating call to them...`,
+        );
         peerNamesRef.current[callerId] = callerName;
         setPeerNames((prev) => ({ ...prev, [callerId]: callerName }));
 
@@ -87,7 +86,7 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
     );
 
     externalSocket.on("call-user", ({ signal, callerId }) => {
-      console.log("📞 4. Incoming call from:", callerId);
+      console.log("📞 5. Incoming call signal from:", callerId);
       let peer = peersRef.current[callerId];
       if (!peer && localStreamRef.current) {
         peer = connectToPeer(
@@ -103,14 +102,20 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
     });
 
     externalSocket.on("call-accepted", ({ signal, callId }) => {
-      console.log("✅ 5. Call accepted by:", callId);
+      console.log("✅ 6. Call accepted signal from:", callId);
       if (peersRef.current[callId]) {
         peersRef.current[callId].signal(signal);
       }
     });
 
+    externalSocket.on("ice-candidate", ({ candidate, from }) => {
+      if (peersRef.current[from]) {
+        peersRef.current[from].addIceCandidate(new RTCIceCandidate(candidate));
+      }
+    });
+
     externalSocket.on("user-disconnected", (disconnectedUserId) => {
-      console.log("❌ 6. User disconnected:", disconnectedUserId);
+      console.log("❌ User disconnected:", disconnectedUserId);
       if (peersRef.current[disconnectedUserId]) {
         peersRef.current[disconnectedUserId].destroy();
         delete peersRef.current[disconnectedUserId];
@@ -119,11 +124,6 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
           delete newPeers[disconnectedUserId];
           return newPeers;
         });
-        setPeerStates((prev) => {
-          const newStates = { ...prev };
-          delete newStates[disconnectedUserId];
-          return newStates;
-        });
       }
     });
 
@@ -131,16 +131,15 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
       isMounted = false;
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => track.stop());
-        localStreamRef.current = null;
       }
       Object.values(peersRef.current).forEach((peer) => peer.destroy());
       peersRef.current = {};
 
       externalSocket.off("room-users");
-      externalSocket.off("user-names");
-      externalSocket.off("user-connected");
+      externalSocket.off("user-ready");
       externalSocket.off("call-user");
       externalSocket.off("call-accepted");
+      externalSocket.off("ice-candidate");
       externalSocket.off("user-disconnected");
     };
   }, [roomId, userId, userName, externalSocket]);

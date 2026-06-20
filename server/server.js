@@ -302,6 +302,13 @@ io.on("connection", (socket) => {
     }
   });
 
+  // --- NAYA HANDSHAKE EVENT ---
+  // Jab naya user fully ready ho jayega, toh wo baakiyo ko signal bhejega
+  socket.on("ready-for-calls", (roomId, userId, userName) => {
+    console.log(`🛎️ User ${userName} (${userId}) is fully ready for calls in room ${roomId}`);
+    socket.to(roomId).emit("user-ready", { userId, userName });
+  });
+
   // Audio state sync
   socket.on("toggle-audio", ({ roomId, userId, audioEnabled }) => {
     // Update room state
