@@ -247,29 +247,41 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
     }
   };
 
-  // 🟢 UPDATED: Screen Share me ADD STREAM hoga, Replace Track nahi
+  // 🟢 OPTIMIZED: High Resolution, Lower Framerate for Crisp Screen Share
   const startScreenShare = async () => {
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
-        video: { cursor: "always" },
-        audio: true,
+      const stream = await navigator.mediaDevices.getDisplayMedia({ 
+        video: { 
+          cursor: "always",
+          displaySurface: "monitor",
+          logicalSurface: true,
+          // Force high resolution
+          width: { ideal: 1920, max: 1920 },
+          height: { ideal: 1080, max: 1080 },
+          // Lower framerate is CRITICAL for screen share to prevent lag and blur
+          frameRate: { ideal: 15, max: 30 } 
+        }, 
+        audio: true 
       });
+      
       setScreenStream(stream);
       setIsScreenSharing(true);
 
-      externalSocket?.emit("toggle-screen-share", {
-        roomId,
-        userId,
-        isScreenSharing: true,
-        streamId: stream.id,
+      externalSocket?.emit("toggle-screen-share", { 
+        roomId, 
+        userId, 
+        isScreenSharing: true, 
+        streamId: stream.id 
       });
 
       Object.values(peersRef.current).forEach((peer) => {
-        if (peer && !peer.destroyed) peer.addStream(stream); // Camera stream k sath Nayi screen stream bhej rahe hain
+        if (peer && !peer.destroyed) peer.addStream(stream); 
       });
 
       stream.getVideoTracks()[0].onended = () => stopScreenShare(stream);
-    } catch (err) {}
+    } catch (err) {
+      console.error("Error starting screen share:", err);
+    }
   };
 
   const stopScreenShare = (passedStream) => {
