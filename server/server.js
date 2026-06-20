@@ -281,7 +281,7 @@ io.on("connection", (socket) => {
       if (targetUser) {
         socket
           .to(targetUser.socketId)
-          .emit("call-accepted", { signal, callId });
+          .emit("call-accepted", { signal, callId: socket.userId }); 
       } else {
         console.error("User not found in room:", callId);
       }
@@ -302,7 +302,7 @@ io.on("connection", (socket) => {
       if (targetUser) {
         socket
           .to(targetUser.socketId)
-          .emit("ice-candidate", { candidate, from: socket.id });
+          .emit("ice-candidate", { candidate, from: socket.userId });
       } else {
         console.error("User not found in room:", to);
       }
