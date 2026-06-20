@@ -444,7 +444,7 @@ const Room = () => {
                       </div>
                     </div>
                   )}
-                  <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-md border border-white/10 px-3 py-1 rounded-lg text-xs font-medium text-slate-200">
+                  <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md border border-white/10 px-3 py-1 rounded-lg text-xs font-medium text-slate-200">
                     {participant.name}
                   </div>
                 </div>
@@ -571,6 +571,30 @@ const Room = () => {
           </button>
           <div className="w-px h-8 bg-white/10 mx-2"></div>
 
+          {/* Screen Share */}
+          <button
+            onClick={toggleScreenShare}
+            className={`w-12 h-12 flex items-center justify-center rounded-full transition-all border ${
+              isScreenSharing
+                ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.3)]"
+                : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:text-white"
+            }`}
+            title={isScreenSharing ? "Stop Broadcast" : "Broadcast Screen"}
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+              />
+            </svg>
+          </button>
           <button
             onClick={() => {
               setShowSidebar(!showSidebar);
