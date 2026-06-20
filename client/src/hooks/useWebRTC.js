@@ -2,18 +2,25 @@ import { useState, useEffect, useRef } from "react";
 import SimplePeer from "simple-peer";
 
 const useWebRTC = (roomId, userId, userName, externalSocket) => {
-  const [peers, setPeers] = useState({}); // Ab ye Array of streams store karega
+  const [peers, setPeers] = useState({});
   const [peerNames, setPeerNames] = useState({});
   const [peerStates, setPeerStates] = useState({});
+
   const [localStream, setLocalStream] = useState(null);
   const localStreamRef = useRef(null);
+
   const [screenStream, setScreenStream] = useState(null);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+
+  const screenStreamRef = useRef(null);
+  const isScreenSharingRef = useRef(false);
+
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [connectionQuality, setConnectionQuality] = useState("good");
+
   const userVideoRef = useRef(null);
   const peersRef = useRef({});
   const peerNamesRef = useRef({});
@@ -66,8 +73,20 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
           peersRef.current[callerId].destroy();
           delete peersRef.current[callerId];
         }
-        if (localStreamRef.current)
+        if (localStreamRef.current) {
           connectToPeer(callerId, localStreamRef.current, true, externalSocket);
+        }
+
+        // 🟢 FIX 2: Agar main pehle se Screen Share kar raha hu aur koi naya user aaya/reload hua,
+        // toh main sabko wapas yaad dilaunga ki meri screen on hai (UI update ke liye).
+        if (isScreenSharingRef.current && screenStreamRef.current) {
+          externalSocket.emit("toggle-screen-share", {
+            roomId,
+            userId,
+            isScreenSharing: true,
+            streamId: screenStreamRef.current.id,
+          });
+        }
       },
     );
 
@@ -100,7 +119,6 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
       }
     });
 
-    // Toggle Receivers
     externalSocket.on(
       "user-audio-toggled",
       ({ userId: tId, audioEnabled: isEnabled }) => {
@@ -120,7 +138,6 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
       },
     );
 
-    // 🟢 UPDATED: Receiver gets screen share state AND streamId to identify which stream is screen
     externalSocket.on(
       "user-screen-share-toggled",
       ({ userId: sharerId, isScreenSharing: isSharing, streamId }) => {
@@ -148,11 +165,17 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
   const connectToPeer = (peerId, stream, isInitiator, socket) => {
     if (peersRef.current[peerId]) return peersRef.current[peerId];
 
+    // 🟢 FIX 3: Naye/Reloaded user ko dono stream (Camera + Screen) ek sath bhejni padegi
+    const streamsToSend = [stream]; // Isme camera hai
+    if (isScreenSharingRef.current && screenStreamRef.current) {
+      streamsToSend.push(screenStreamRef.current); // Isme screen daal di
+    }
+
     try {
       const peer = new SimplePeer({
         initiator: isInitiator,
         trickle: true,
-        stream: stream,
+        streams: streamsToSend, // 'stream' ki jagah 'streams' array bheja
         config: { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] },
       });
 
@@ -166,7 +189,6 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
         else socket.emit("call-accepted", { signal: signal, callId: peerId });
       });
 
-      // 🟢 FIX: Ab stream aane par existing streams array me add hoga (replace nahi karega)
       peer.on("stream", (userStream) => {
         setPeers((prev) => {
           const existingStreams = prev[peerId] || [];
@@ -247,40 +269,40 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
     }
   };
 
-  // 🟢 OPTIMIZED: High Resolution, Lower Framerate for Crisp Screen Share
   const startScreenShare = async () => {
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ 
-        video: { 
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
           cursor: "always",
           displaySurface: "monitor",
           logicalSurface: true,
-          // Force high resolution
           width: { ideal: 1920, max: 1920 },
           height: { ideal: 1080, max: 1080 },
-          // Lower framerate is CRITICAL for screen share to prevent lag and blur
-          frameRate: { ideal: 15, max: 30 } 
-        }, 
-        audio: true 
+          frameRate: { ideal: 15, max: 30 },
+        },
+        audio: true,
       });
-      
-      setScreenStream(stream);
-      setIsScreenSharing(true);
 
-      externalSocket?.emit("toggle-screen-share", { 
-        roomId, 
-        userId, 
-        isScreenSharing: true, 
-        streamId: stream.id 
+      setScreenStream(stream);
+      screenStreamRef.current = stream; // 🟢 Tracker Update
+
+      setIsScreenSharing(true);
+      isScreenSharingRef.current = true; // 🟢 Tracker Update
+
+      externalSocket?.emit("toggle-screen-share", {
+        roomId,
+        userId,
+        isScreenSharing: true,
+        streamId: stream.id,
       });
 
       Object.values(peersRef.current).forEach((peer) => {
-        if (peer && !peer.destroyed) peer.addStream(stream); 
+        if (peer && !peer.destroyed) peer.addStream(stream);
       });
 
       stream.getVideoTracks()[0].onended = () => stopScreenShare(stream);
     } catch (err) {
-      console.error("Error starting screen share:", err);
+      console.error(err);
     }
   };
 
@@ -292,12 +314,14 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
         if (peer && !peer.destroyed) {
           try {
             peer.removeStream(streamToStop);
-          } catch (e) {} // Screen stream wapas hata di
+          } catch (e) {}
         }
       });
       setScreenStream(null);
+      screenStreamRef.current = null; // 🟢 Tracker Update
     }
     setIsScreenSharing(false);
+    isScreenSharingRef.current = false; // 🟢 Tracker Update
     externalSocket?.emit("toggle-screen-share", {
       roomId,
       userId,
@@ -310,10 +334,10 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
   };
 
   const startRecording = () => {
-    /* Tumhara Purna Logic yaha rahega, jagah bachane k liye chhoda hai */
+    /* Recording logic placeholder */
   };
   const stopRecording = () => {
-    /* Tumhara Purna Logic yaha rahega, jagah bachane k liye chhoda hai */
+    /* Recording logic placeholder */
   };
   const toggleRecording = () => {
     isRecording ? stopRecording() : startRecording();
