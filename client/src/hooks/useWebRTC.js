@@ -23,11 +23,21 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
 
     let isMounted = true;
 
+    // 🔴 NAYE LOGS: Ye check karenge ki Socket.io server se connect ho bhi raha hai ya nahi
+    externalSocket.on("connect", () => {
+      console.log("🔌 Socket Connected to Backend! ID:", externalSocket.id);
+    });
+    externalSocket.on("connect_error", (err) => {
+      console.error("🚨 Socket Connection ERROR:", err.message);
+    });
+
     navigator.mediaDevices
       .getUserMedia({ video: true, audio: true })
       .then((stream) => {
         if (!isMounted) return;
-        console.log("🟢 1. Local stream ready, joining room...");
+        console.log(
+          `🟢 1. Stream ready. Emitting join-room -> Room:${roomId}, User:${userId}`,
+        );
         setLocalStream(stream);
         localStreamRef.current = stream;
 
@@ -451,8 +461,6 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
       startRecording();
     }
   };
-
-
 
   const leaveRoom = () => {
     if (localStream) localStream.getTracks().forEach((track) => track.stop());

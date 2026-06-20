@@ -91,6 +91,8 @@ io.on("connection", (socket) => {
 
   // Room join logic
   socket.on("join-room", async (roomId, userId, userName) => {
+    console.log(`\n--- 🚀 NEW JOIN REQUEST ---`);
+    console.log(`📥 Room: ${roomId} | UserID: ${userId} | Name: ${userName}`);
     // Store roomId in socket for use in other handlers
     socket.roomId = roomId;
     socket.userId = userId;
@@ -99,6 +101,7 @@ io.on("connection", (socket) => {
     try {
       const meeting = await Meeting.findOne({ meetingId: roomId });
       if (meeting && meeting.status === "ended") {
+        console.log(`🚫 Meeting already ended. Bouncing user.`);
         socket.emit("meeting-ended", { roomId, reason: "already_ended" });
         return;
       }
@@ -107,9 +110,11 @@ io.on("connection", (socket) => {
     }
 
     socket.join(roomId);
+    console.log(`✅ Socket successfully joined room ID: ${roomId}`);
 
     // Initialize room if not exists
     if (!rooms.has(roomId)) {
+      console.log(`🏠 Creating fresh room state for: ${roomId}`);
       rooms.set(roomId, new Map());
       // First user becomes host
       meetingSettings.set(roomId, {
@@ -212,6 +217,8 @@ io.on("connection", (socket) => {
       (id) => id !== userId,
     );
 
+    console.log(`👥 Other users currently in room:`, roomUsers);
+
     // Get user names for existing users
     const userNames = {};
     roomUsers.forEach((id) => {
@@ -222,9 +229,11 @@ io.on("connection", (socket) => {
 
     // Notify existing users
     socket.to(roomId).emit("user-connected", { userId, userName });
+    console.log(`📤 Emitted 'user-connected' to other participants.`);
 
     // Send current users to new user
     socket.emit("room-users", roomUsers);
+    console.log(`📤 Emitted 'room-users' to the newly joined user.`);
 
     // Send user names to new user
     socket.emit("user-names", userNames);
@@ -233,6 +242,7 @@ io.on("connection", (socket) => {
     if (meetingSettings.has(roomId)) {
       socket.emit("meeting-settings", meetingSettings.get(roomId));
     }
+    console.log(`--- ✨ JOIN PROCESS COMPLETE ---\n`);
 
     socket.on("disconnect", () => {
       socket.to(roomId).emit("user-disconnected", userId);
