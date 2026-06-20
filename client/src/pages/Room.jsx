@@ -44,6 +44,7 @@ const Room = () => {
   const [handRaised, setHandRaised] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [meetingStatus, setMeetingStatus] = useState(null);
+  const [shareRequests, setShareRequests] = useState([]); // For Screen share requests store
 
   const [modal, setModal] = useState({
     isOpen: false,
@@ -108,11 +109,13 @@ const Room = () => {
     isRecording,
     recordingTime,
     connectionQuality,
+    userVideoRef,
     toggleAudio,
     toggleVideo,
-    toggleScreenShare,
     toggleRecording,
     leaveRoom,
+    startScreenShare,
+    stopScreenShare,
   } = useWebRTC(
     roomId,
     userId,
@@ -135,6 +138,34 @@ const Room = () => {
 
     socketRef.current.on("user-disconnected", () => {
       addNotification("A node has disconnected.", "info");
+    });
+
+    // Sirf Host ke paas aayega
+    socketRef.current.on(
+      "screen-share-request",
+      ({ userId: reqId, userName: reqName }) => {
+        setShareRequests((prev) => [...prev, { id: reqId, name: reqName }]);
+        addNotification(`${reqName} wants to share screen.`, "info");
+      },
+    );
+
+    // Participant ko approval milega
+    socketRef.current.on("screen-share-approved", () => {
+      addNotification("Screen share request approved!", "success");
+      startScreenShare();
+    });
+
+    // Participant ko denial milega
+    socketRef.current.on("screen-share-denied", () => {
+      addNotification("Host denied your screen share request.", "error");
+    });
+
+    // Agar kisi naye user ko approval milta hai, toh purani chalti hui screen band karo
+    socketRef.current.on("global-stop-screen-share", ({ exceptId }) => {
+      if (userId !== exceptId && isScreenSharing) {
+        stopScreenShare();
+        addNotification("Screen sharing overridden by another user.", "info");
+      }
     });
 
     socketRef.current.on(
@@ -225,6 +256,10 @@ const Room = () => {
         socketRef.current.off("meeting-ended");
         socketRef.current.off("message-history");
         socketRef.current.off("receive-message");
+        socketRef.current.off("screen-share-request");
+        socketRef.current.off("screen-share-approved");
+        socketRef.current.off("screen-share-denied");
+        socketRef.current.off("global-stop-screen-share");
       }
     };
   }, [
@@ -267,6 +302,16 @@ const Room = () => {
     if (!isHost) return;
     socketRef.current?.emit("mute-all", { roomId, hostId: userId });
     addNotification("Global mute protocol engaged.", "success");
+  };
+
+  const handleApproveShare = (requesterId) => {
+    socketRef.current?.emit("approve-screen-share", { roomId, requesterId });
+    setShareRequests((prev) => prev.filter((req) => req.id !== requesterId));
+  };
+
+  const handleDenyShare = (requesterId) => {
+    socketRef.current?.emit("deny-screen-share", { roomId, requesterId });
+    setShareRequests((prev) => prev.filter((req) => req.id !== requesterId));
   };
 
   const formatRecordingTime = (seconds) => {
@@ -373,6 +418,54 @@ const Room = () => {
         ))}
       </div>
 
+      {/* Screen Share Requests Overlay (Host Only) */}
+      {isHost && shareRequests.length > 0 && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-3">
+          {shareRequests.map((req) => (
+            <div
+              key={req.id}
+              className="bg-black/80 backdrop-blur-xl border border-cyan-500/50 p-4 rounded-2xl shadow-[0_0_30px_rgba(6,182,212,0.3)] flex items-center gap-4 animate-slide-in"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-cyan-500/20 rounded-full flex items-center justify-center">
+                  <svg
+                    className="w-4 h-4 text-cyan-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                    />
+                  </svg>
+                </div>
+                <span className="text-white text-sm font-medium">
+                  <span className="text-cyan-400 font-bold">{req.name}</span>{" "}
+                  wants to share screen.
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleApproveShare(req.id)}
+                  className="bg-green-500/20 hover:bg-green-500/40 border border-green-500/50 text-green-400 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                >
+                  Approve
+                </button>
+                <button
+                  onClick={() => handleDenyShare(req.id)}
+                  className="bg-red-500/20 hover:bg-red-500/40 border border-red-500/50 text-red-400 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                >
+                  Deny
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <header className="relative z-20 px-4 py-4 pointer-events-none">
         <div className="max-w-7xl mx-auto flex justify-between items-center pointer-events-auto bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl px-6 py-3 shadow-[0_0_30px_rgba(0,0,0,0.5)]">
           <div className="flex items-center space-x-4">
@@ -414,8 +507,9 @@ const Room = () => {
       </header>
 
       <div className="flex-1 flex overflow-hidden relative z-10 px-4">
-        <main className={`flex-1 overflow-hidden transition-all duration-300 flex flex-col ${showSidebar ? "pr-4" : ""}`}>
-          
+        <main
+          className={`flex-1 overflow-hidden transition-all duration-300 flex flex-col ${showSidebar ? "pr-4" : ""}`}
+        >
           {/* Logic to find who is screen sharing and split streams */}
           {(() => {
             const allParticipants = [
@@ -430,14 +524,17 @@ const Room = () => {
               ...Object.keys(peers).map((peerId) => {
                 const streams = peers[peerId] || [];
                 const state = peerStates[peerId] || {};
-                
+
                 // Identify which stream is camera and which is screen
                 let pScreenStream = null;
                 let pCameraStream = streams[0];
 
                 if (state.isScreenSharing && streams.length > 0) {
-                  pScreenStream = streams.find(s => s.id === state.screenStreamId) || streams[1];
-                  pCameraStream = streams.find(s => s !== pScreenStream) || streams[0];
+                  pScreenStream =
+                    streams.find((s) => s.id === state.screenStreamId) ||
+                    streams[1];
+                  pCameraStream =
+                    streams.find((s) => s !== pScreenStream) || streams[0];
                 }
 
                 return {
@@ -451,17 +548,25 @@ const Room = () => {
               }),
             ];
 
-            const screenSharer = allParticipants.find(p => p.isScreenSharing && p.screenStream);
+            const screenSharer = allParticipants.find(
+              (p) => p.isScreenSharing && p.screenStream,
+            );
 
             return screenSharer ? (
               // 🔴 CAROUSEL + MAIN SCREEN LAYOUT
               <div className="flex flex-col h-full w-full gap-4">
-                
                 {/* Top Carousel for Cameras */}
                 <div className="w-full flex gap-3 overflow-x-auto custom-scrollbar pb-1 min-h-[120px] items-center">
-                  {allParticipants.map(participant => (
-                    <div key={`cam-${participant.id}`} className="relative w-48 shrink-0 aspect-video rounded-xl overflow-hidden border border-white/10 shadow-[0_0_15px_rgba(0,0,0,0.5)] bg-black/80 group">
-                      <Video stream={participant.cameraStream} muted={participant.isLocal} name={participant.name} />
+                  {allParticipants.map((participant) => (
+                    <div
+                      key={`cam-${participant.id}`}
+                      className="relative w-48 shrink-0 aspect-video rounded-xl overflow-hidden border border-white/10 shadow-[0_0_15px_rgba(0,0,0,0.5)] bg-black/80 group"
+                    >
+                      <Video
+                        stream={participant.cameraStream}
+                        muted={participant.isLocal}
+                        name={participant.name}
+                      />
                       {/* Name Tag for Carousel */}
                       <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-md border border-white/10 px-2 py-0.5 rounded text-[10px] font-medium text-slate-200 truncate max-w-[90%] z-10">
                         {participant.name}
@@ -472,23 +577,31 @@ const Room = () => {
 
                 {/* Main Screen Share View */}
                 <div className="flex-1 relative w-full rounded-2xl overflow-hidden border border-cyan-500/30 shadow-[0_0_30px_rgba(6,182,212,0.2)] bg-black/80">
-                  <Video 
-                    stream={screenSharer.screenStream} 
-                    muted={screenSharer.isLocal} 
-                    name={`${screenSharer.name}'s Screen`} 
-                    isScreenSharing={true} 
-                    isMainScreen={true} 
+                  <Video
+                    stream={screenSharer.screenStream}
+                    muted={screenSharer.isLocal}
+                    name={`${screenSharer.name}'s Screen`}
+                    isScreenSharing={true}
+                    isMainScreen={true}
                   />
                 </div>
               </div>
-
             ) : (
               // 🟢 REGULAR GRID LAYOUT (Jab koi screen share nahi kar raha)
-              <div className={`grid ${getGridClass(participantCount)} gap-4 w-full h-full content-center overflow-auto custom-scrollbar pb-24`}>
+              <div
+                className={`grid ${getGridClass(participantCount)} gap-4 w-full h-full content-center overflow-auto custom-scrollbar pb-24`}
+              >
                 {allParticipants.map((participant) => (
-                  <div key={participant.id} className="relative w-full aspect-video rounded-2xl overflow-hidden border border-white/10 shadow-[0_0_20px_rgba(0,0,0,0.5)] bg-black/50 group">
-                    <Video stream={participant.cameraStream} muted={participant.isLocal} name={participant.name} />
-                    
+                  <div
+                    key={participant.id}
+                    className="relative w-full aspect-video rounded-2xl overflow-hidden border border-white/10 shadow-[0_0_20px_rgba(0,0,0,0.5)] bg-black/50 group"
+                  >
+                    <Video
+                      stream={participant.cameraStream}
+                      muted={participant.isLocal}
+                      name={participant.name}
+                    />
+
                     {!videoEnabled && participant.isLocal && (
                       <div className="absolute inset-0 bg-[#0a0a0f] flex items-center justify-center z-10">
                         <div className="w-20 h-20 bg-gradient-to-tr from-cyan-600/30 to-blue-600/30 border border-cyan-500/50 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(6,182,212,0.3)]">
@@ -625,9 +738,23 @@ const Room = () => {
           </button>
           <div className="w-px h-8 bg-white/10 mx-2"></div>
 
-          {/* Screen Share */}
+          {/* Screen Share Button */}
           <button
-            onClick={toggleScreenShare}
+            onClick={() => {
+              if (isScreenSharing) {
+                stopScreenShare(); // Agar already chal rahi hai toh band kardo
+              } else if (isHost) {
+                startScreenShare(); // Host direct share kar sakta hai
+              } else {
+                // Participant request bhejega
+                socketRef.current?.emit("request-screen-share", {
+                  roomId,
+                  userId,
+                  userName,
+                });
+                addNotification("Screen share request sent to host.", "info");
+              }
+            }}
             className={`w-12 h-12 flex items-center justify-center rounded-full transition-all border ${
               isScreenSharing
                 ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.3)]"
@@ -649,6 +776,7 @@ const Room = () => {
               />
             </svg>
           </button>
+
           <button
             onClick={() => {
               setShowSidebar(!showSidebar);

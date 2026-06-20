@@ -443,6 +443,47 @@ io.on("connection", (socket) => {
     }
   });
 
+  // 1. Participant requests screen share
+  socket.on("request-screen-share", ({ roomId, userId, userName }) => {
+    if (meetingSettings.has(roomId)) {
+      const hostId = meetingSettings.get(roomId).hostId;
+      const room = rooms.get(roomId);
+      
+      // Send request specifically to the Host's socket
+      if (hostId !== userId) {
+        const hostUser = room.get(hostId);
+        if (hostUser) {
+          socket.to(hostUser.socketId).emit("screen-share-request", { userId, userName });
+        }
+      }
+    }
+  });
+
+  // 2. Host approves request
+  socket.on("approve-screen-share", ({ roomId, requesterId }) => {
+    // Aadesh: Requester ke ilawa baaki sabki chalti hui screen band karo (Host ki bhi)
+    socket.emit("global-stop-screen-share", { exceptId: requesterId });
+    socket.to(roomId).emit("global-stop-screen-share", { exceptId: requesterId });
+
+    // Requester ko approval de do
+    if (rooms.has(roomId)) {
+      const requester = rooms.get(roomId).get(requesterId);
+      if (requester) {
+        socket.to(requester.socketId).emit("screen-share-approved");
+      }
+    }
+  });
+
+  // 3. Host denies request
+  socket.on("deny-screen-share", ({ roomId, requesterId }) => {
+    if (rooms.has(roomId)) {
+      const requester = rooms.get(roomId).get(requesterId);
+      if (requester) {
+        socket.to(requester.socketId).emit("screen-share-denied");
+      }
+    }
+  });
+
   // End meeting
   socket.on("end-meeting", ({ roomId }) => {
     // Notify all users in the room that meeting has ended

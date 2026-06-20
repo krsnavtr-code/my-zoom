@@ -371,6 +371,8 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
     toggleScreenShare,
     toggleRecording,
     leaveRoom,
+    startScreenShare,
+    stopScreenShare,
   };
 };
 
