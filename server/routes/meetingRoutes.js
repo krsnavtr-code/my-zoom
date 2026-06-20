@@ -7,13 +7,23 @@ const router = express.Router();
 // Save meeting participant
 router.post("/participant", async (req, res) => {
   try {
-    const { meetingId, name, email, phone } = req.body;
+    const { meetingId, name, email, phone, deviceFingerprint, browser, os } =
+      req.body;
+
+    // Get IP address from request
+    const ipAddress =
+      req.ip || req.connection.remoteAddress || req.socket.remoteAddress;
 
     const participant = new MeetingParticipant({
       meetingId,
       name,
       email,
       phone,
+      ipAddress,
+      userAgent: req.headers["user-agent"],
+      deviceFingerprint,
+      browser,
+      os,
     });
 
     await participant.save();
@@ -28,6 +38,51 @@ router.post("/participant", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error saving participant",
+    });
+  }
+});
+
+// Check if participant exists by email or device fingerprint
+router.post("/participant/check", async (req, res) => {
+  try {
+    const { email, deviceFingerprint } = req.body;
+
+    // First check by device fingerprint (more reliable for returning users)
+    let participant = null;
+    if (deviceFingerprint) {
+      participant = await MeetingParticipant.findOne({
+        deviceFingerprint,
+      }).sort({ createdAt: -1 });
+    }
+
+    // If not found by fingerprint, check by email
+    if (!participant && email) {
+      participant = await MeetingParticipant.findOne({ email }).sort({
+        createdAt: -1,
+      });
+    }
+
+    if (participant) {
+      res.json({
+        success: true,
+        exists: true,
+        participant: {
+          name: participant.name,
+          email: participant.email,
+          phone: participant.phone,
+        },
+      });
+    } else {
+      res.json({
+        success: true,
+        exists: false,
+      });
+    }
+  } catch (error) {
+    console.error("Error checking participant:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error checking participant",
     });
   }
 });

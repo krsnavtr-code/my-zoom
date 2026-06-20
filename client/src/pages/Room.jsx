@@ -33,9 +33,20 @@ const Room = () => {
   });
   const socketRef = useRef(null);
 
-  // Check meeting status before allowing join
+  // Check meeting status and participant registration before allowing join
   useEffect(() => {
-    const checkMeetingStatus = async () => {
+    const checkAccess = async () => {
+      // Check if user has participant data or is logged in
+      const participantData = localStorage.getItem("participant");
+      const userData = localStorage.getItem("user");
+
+      if (!participantData && !userData) {
+        // Redirect to join form if not registered
+        navigate(`/join/${roomId}`);
+        return;
+      }
+
+      // Check meeting status
       try {
         const response = await axios.get(
           `${import.meta.env.VITE_API_URL}/api/meeting/status/${roomId}`,
@@ -57,7 +68,7 @@ const Room = () => {
       }
     };
 
-    checkMeetingStatus();
+    checkAccess();
   }, [roomId, navigate]);
 
   // Initialize socket once (only if meeting is not ended)

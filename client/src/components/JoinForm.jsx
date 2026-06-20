@@ -13,6 +13,49 @@ const JoinForm = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [isCheckingExisting, setIsCheckingExisting] = useState(true);
+
+  // Generate device fingerprint
+  const generateDeviceFingerprint = () => {
+    const userAgent = navigator.userAgent;
+    const screenResolution = `${window.screen.width}x${window.screen.height}`;
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const language = navigator.language;
+    const platform = navigator.platform;
+
+    // Create a simple hash from these values
+    const fingerprintString = `${userAgent}|${screenResolution}|${timezone}|${language}|${platform}`;
+    let hash = 0;
+    for (let i = 0; i < fingerprintString.length; i++) {
+      const char = fingerprintString.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return hash.toString(36);
+  };
+
+  // Detect browser and OS
+  const detectBrowserAndOS = () => {
+    const userAgent = navigator.userAgent;
+    let browser = "Unknown";
+    let os = "Unknown";
+
+    // Browser detection
+    if (userAgent.includes("Firefox")) browser = "Firefox";
+    else if (userAgent.includes("Chrome")) browser = "Chrome";
+    else if (userAgent.includes("Safari")) browser = "Safari";
+    else if (userAgent.includes("Edge")) browser = "Edge";
+    else if (userAgent.includes("Opera")) browser = "Opera";
+
+    // OS detection
+    if (userAgent.includes("Windows")) os = "Windows";
+    else if (userAgent.includes("Mac")) os = "MacOS";
+    else if (userAgent.includes("Linux")) os = "Linux";
+    else if (userAgent.includes("Android")) os = "Android";
+    else if (userAgent.includes("iOS")) os = "iOS";
+
+    return { browser, os };
+  };
 
   useEffect(() => {
     // Check if user is already logged in
@@ -23,12 +66,40 @@ const JoinForm = () => {
       autoJoinWithUser(user);
     } else {
       setIsCheckingAuth(false);
+      // Check for existing participant by device fingerprint
+      checkExistingParticipant();
     }
   }, [roomId]);
+
+  const checkExistingParticipant = async () => {
+    try {
+      const deviceFingerprint = generateDeviceFingerprint();
+      const response = await axios.post(
+        `${import.meta.env.VITE_API_URL}/api/meeting/participant/check`,
+        { deviceFingerprint },
+      );
+
+      if (response.data.exists && response.data.participant) {
+        // Auto-fill form with existing data
+        setFormData({
+          name: response.data.participant.name,
+          email: response.data.participant.email,
+          phone: response.data.participant.phone,
+        });
+      }
+    } catch (error) {
+      console.error("Error checking existing participant:", error);
+    } finally {
+      setIsCheckingExisting(false);
+    }
+  };
 
   const autoJoinWithUser = async (user) => {
     setLoading(true);
     try {
+      const deviceFingerprint = generateDeviceFingerprint();
+      const { browser, os } = detectBrowserAndOS();
+
       // Save participant to database with user's info
       const response = await axios.post(
         `${import.meta.env.VITE_API_URL}/api/meeting/participant`,
@@ -37,6 +108,9 @@ const JoinForm = () => {
           name: user.name,
           email: user.email,
           phone: user.phone || "0000000000", // Default if phone not available
+          deviceFingerprint,
+          browser,
+          os,
         },
       );
 
@@ -104,6 +178,9 @@ const JoinForm = () => {
     setLoading(true);
 
     try {
+      const deviceFingerprint = generateDeviceFingerprint();
+      const { browser, os } = detectBrowserAndOS();
+
       // Save participant to database
       const response = await axios.post(
         `${import.meta.env.VITE_API_URL}/api/meeting/participant`,
@@ -112,6 +189,9 @@ const JoinForm = () => {
           name: formData.name,
           email: formData.email,
           phone: formData.phone,
+          deviceFingerprint,
+          browser,
+          os,
         },
       );
 
@@ -146,7 +226,7 @@ const JoinForm = () => {
 
       <div className="max-w-sm w-full relative z-10 py-8">
         {/* Loading state while checking auth */}
-        {isCheckingAuth || loading ? (
+        {isCheckingAuth || isCheckingExisting || loading ? (
           <div className="text-center">
             <div className="w-12 h-12 bg-gradient-to-tr from-cyan-500 to-blue-600 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-[0_0_15px_rgba(6,182,212,0.5)]">
               <svg
