@@ -414,45 +414,99 @@ const Room = () => {
       </header>
 
       <div className="flex-1 flex overflow-hidden relative z-10 px-4">
-        <main
-          className={`flex-1 overflow-auto transition-all duration-300 ${showSidebar ? "pr-4" : ""}`}
-        >
-          <div
-            className={`grid ${getGridClass(participantCount)} gap-4 w-full h-full content-center`}
-          >
-            {allParticipants.map((participant) => {
-              const state = participant.isLocal
-                ? { isScreenSharing }
-                : peerStates[participant.id] || { isScreenSharing: false };
-              return (
-                <div
-                  key={participant.id}
-                  className="relative w-full aspect-video rounded-2xl overflow-hidden border border-white/10 shadow-[0_0_20px_rgba(0,0,0,0.5)] bg-black/50 group"
-                >
-                  <Video
-                    stream={participant.stream}
-                    muted={participant.isLocal}
-                    name={participant.name}
-                    isScreenSharing={state.isScreenSharing}
-                  />
-                  {!videoEnabled && participant.isLocal && (
-                    <div className="absolute inset-0 bg-[#0a0a0f] flex items-center justify-center">
-                      <div className="w-20 h-20 bg-gradient-to-tr from-cyan-600/30 to-blue-600/30 border border-cyan-500/50 rounded-full flex items-center justify-center">
-                        <span className="text-cyan-400 text-3xl font-bold font-mono">
-                          {userName.charAt(0).toUpperCase()}
-                        </span>
+        <main className={`flex-1 overflow-hidden transition-all duration-300 flex flex-col ${showSidebar ? "pr-4" : ""}`}>
+          
+          {/* Logic to find who is screen sharing and split streams */}
+          {(() => {
+            const allParticipants = [
+              {
+                id: userId,
+                name: `${userName} (You)`,
+                cameraStream: localStream,
+                screenStream: screenStream,
+                isLocal: true,
+                isScreenSharing: isScreenSharing,
+              },
+              ...Object.keys(peers).map((peerId) => {
+                const streams = peers[peerId] || [];
+                const state = peerStates[peerId] || {};
+                
+                // Identify which stream is camera and which is screen
+                let pScreenStream = null;
+                let pCameraStream = streams[0];
+
+                if (state.isScreenSharing && streams.length > 0) {
+                  pScreenStream = streams.find(s => s.id === state.screenStreamId) || streams[1];
+                  pCameraStream = streams.find(s => s !== pScreenStream) || streams[0];
+                }
+
+                return {
+                  id: peerId,
+                  name: peerNames[peerId] || `User ${peerId.slice(0, 8)}`,
+                  cameraStream: pCameraStream,
+                  screenStream: pScreenStream,
+                  isLocal: false,
+                  isScreenSharing: state.isScreenSharing,
+                };
+              }),
+            ];
+
+            const screenSharer = allParticipants.find(p => p.isScreenSharing && p.screenStream);
+
+            return screenSharer ? (
+              // 🔴 CAROUSEL + MAIN SCREEN LAYOUT
+              <div className="flex flex-col h-full w-full gap-4">
+                
+                {/* Top Carousel for Cameras */}
+                <div className="w-full flex gap-3 overflow-x-auto custom-scrollbar pb-1 min-h-[120px] items-center">
+                  {allParticipants.map(participant => (
+                    <div key={`cam-${participant.id}`} className="relative w-48 shrink-0 aspect-video rounded-xl overflow-hidden border border-white/10 shadow-[0_0_15px_rgba(0,0,0,0.5)] bg-black/80 group">
+                      <Video stream={participant.cameraStream} muted={participant.isLocal} name={participant.name} />
+                      {/* Name Tag for Carousel */}
+                      <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-md border border-white/10 px-2 py-0.5 rounded text-[10px] font-medium text-slate-200 truncate max-w-[90%] z-10">
+                        {participant.name}
                       </div>
                     </div>
-                  )}
-                  <div className="absolute top-3 left-3 bg-black/60 backdrop-blur-md border border-white/10 px-3 py-1 rounded-lg text-xs font-medium text-slate-200">
-                    {participant.name}
-                  </div>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
-        </main>
 
+                {/* Main Screen Share View */}
+                <div className="flex-1 relative w-full rounded-2xl overflow-hidden border border-cyan-500/30 shadow-[0_0_30px_rgba(6,182,212,0.2)] bg-black/80">
+                  <Video 
+                    stream={screenSharer.screenStream} 
+                    muted={screenSharer.isLocal} 
+                    name={`${screenSharer.name}'s Screen`} 
+                    isScreenSharing={true} 
+                    isMainScreen={true} 
+                  />
+                </div>
+              </div>
+
+            ) : (
+              // 🟢 REGULAR GRID LAYOUT (Jab koi screen share nahi kar raha)
+              <div className={`grid ${getGridClass(participantCount)} gap-4 w-full h-full content-center overflow-auto custom-scrollbar pb-24`}>
+                {allParticipants.map((participant) => (
+                  <div key={participant.id} className="relative w-full aspect-video rounded-2xl overflow-hidden border border-white/10 shadow-[0_0_20px_rgba(0,0,0,0.5)] bg-black/50 group">
+                    <Video stream={participant.cameraStream} muted={participant.isLocal} name={participant.name} />
+                    
+                    {!videoEnabled && participant.isLocal && (
+                      <div className="absolute inset-0 bg-[#0a0a0f] flex items-center justify-center z-10">
+                        <div className="w-20 h-20 bg-gradient-to-tr from-cyan-600/30 to-blue-600/30 border border-cyan-500/50 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(6,182,212,0.3)]">
+                          <span className="text-cyan-400 text-3xl font-bold font-mono">
+                            {userName ? userName.charAt(0).toUpperCase() : "U"}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-md border border-white/10 px-3 py-1 rounded-lg text-xs font-medium text-slate-200 z-10">
+                      {participant.name}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </main>
         {showSidebar && (
           <aside className="w-80 bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl flex flex-col overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.8)] h-[calc(100vh-160px)]">
             <div className="flex border-b border-white/10 bg-white/5">

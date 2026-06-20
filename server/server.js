@@ -342,19 +342,15 @@ io.on("connection", (socket) => {
     socket.to(roomId).emit("user-video-toggled", { userId, videoEnabled });
   });
 
-  // Screen share state sync
-  socket.on("toggle-screen-share", ({ roomId, userId, isScreenSharing }) => {
-    // Update room state
+  // Screen share state sync (UPDATED FOR MULTIPLE STREAMS)
+  socket.on("toggle-screen-share", ({ roomId, userId, isScreenSharing, streamId }) => {
     if (rooms.has(roomId)) {
       const room = rooms.get(roomId);
       if (room.has(userId)) {
         room.get(userId).isScreenSharing = isScreenSharing;
       }
     }
-    // Broadcast to all users in room
-    socket
-      .to(roomId)
-      .emit("user-screen-share-toggled", { userId, isScreenSharing });
+    socket.to(roomId).emit("user-screen-share-toggled", { userId, isScreenSharing, streamId });
   });
 
   // Leave room
