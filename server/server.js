@@ -245,13 +245,18 @@ io.on("connection", (socket) => {
     console.log(`--- ✨ JOIN PROCESS COMPLETE ---\n`);
 
     socket.on("disconnect", () => {
-      socket.to(roomId).emit("user-disconnected", userId);
-      // Remove user from room state
-      if (rooms.has(roomId)) {
-        rooms.get(roomId).delete(userId);
-        // Clean up empty rooms
-        if (rooms.get(roomId).size === 0) {
-          rooms.delete(roomId);
+      const roomId = socket.roomId;
+      const userId = socket.userId;
+
+      if (roomId && userId && rooms.has(roomId)) {
+        const room = rooms.get(roomId);
+        const user = room.get(userId);
+        if (user && user.socketId === socket.id) {
+          socket.to(roomId).emit("user-disconnected", userId);
+          room.delete(userId);
+          if (room.size === 0) {
+            rooms.delete(roomId);
+          }
         }
       }
     });
@@ -305,7 +310,9 @@ io.on("connection", (socket) => {
   // --- NAYA HANDSHAKE EVENT ---
   // Jab naya user fully ready ho jayega, toh wo baakiyo ko signal bhejega
   socket.on("ready-for-calls", (roomId, userId, userName) => {
-    console.log(`🛎️ User ${userName} (${userId}) is fully ready for calls in room ${roomId}`);
+    console.log(
+      `🛎️ User ${userName} (${userId}) is fully ready for calls in room ${roomId}`,
+    );
     socket.to(roomId).emit("user-ready", { userId, userName });
   });
 
@@ -353,13 +360,16 @@ io.on("connection", (socket) => {
   // Leave room
   socket.on("leave-room", (roomId, userId) => {
     socket.leave(roomId);
-    socket.to(roomId).emit("user-disconnected", userId);
-    // Remove user from room state
     if (rooms.has(roomId)) {
-      rooms.get(roomId).delete(userId);
-      // Clean up empty rooms
-      if (rooms.get(roomId).size === 0) {
-        rooms.delete(roomId);
+      const room = rooms.get(roomId);
+      const user = room.get(userId);
+
+      if (user && user.socketId === socket.id) {
+        socket.to(roomId).emit("user-disconnected", userId);
+        room.delete(userId);
+        if (room.size === 0) {
+          rooms.delete(roomId);
+        }
       }
     }
   });

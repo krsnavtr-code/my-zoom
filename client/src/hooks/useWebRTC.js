@@ -52,7 +52,6 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
     externalSocket.on("room-users", (existingUsers) => {
       console.log("👥 2. Received users in room:", existingUsers);
 
-      // Step 2: Naya user sabse pehle as a 'Receiver' (Initiator: false) tayyar hota hai
       existingUsers.forEach((existingUserId) => {
         if (localStreamRef.current) {
           connectToPeer(
@@ -64,12 +63,10 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
         }
       });
 
-      // Step 3: Receiver ready hone ke baad purane users ko announce karta hai ki "Mujhe Call Karo!"
       console.log("📢 3. Ready to receive calls. Informing others...");
       externalSocket.emit("ready-for-calls", roomId, userId, userName);
     });
 
-    // Step 4: Purane users ko ye sunai dega aur wo Call (Initiator: true) karenge
     externalSocket.on(
       "user-ready",
       ({ userId: callerId, userName: callerName }) => {
@@ -78,6 +75,13 @@ const useWebRTC = (roomId, userId, userName, externalSocket) => {
         );
         peerNamesRef.current[callerId] = callerName;
         setPeerNames((prev) => ({ ...prev, [callerId]: callerName }));
+        if (peersRef.current[callerId]) {
+          console.log(
+            "♻️ Destroying old ghost connection for reloaded user...",
+          );
+          peersRef.current[callerId].destroy();
+          delete peersRef.current[callerId];
+        }
 
         if (localStreamRef.current) {
           connectToPeer(callerId, localStreamRef.current, true, externalSocket);
