@@ -91,7 +91,7 @@ const Signup = () => {
               </svg>
             </div>
             <span className="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 tracking-tight">
-              ZoomClone
+              Connect ClassRoom
             </span>
           </Link>
         </div>

@@ -482,7 +482,7 @@ const Room = () => {
         <div className="max-w-7xl mx-auto flex justify-between items-center pointer-events-auto bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl px-6 py-3 shadow-[0_0_30px_rgba(0,0,0,0.5)]">
           <div className="flex items-center space-x-4">
             <h1 className="text-base font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 tracking-tight">
-              ZoomClone
+              Connect ClassRoom
             </h1>
             <span className="text-white/20">|</span>
             <span className="text-xs font-mono text-slate-400">
@@ -536,20 +536,24 @@ const Room = () => {
               ...Object.keys(peers).map((peerId) => {
                 const streams = peers[peerId] || [];
                 const state = peerStates[peerId] || {};
-                
+
                 let pScreenStream = null;
                 let pCameraStream = null;
 
                 // 🟢 STREAM MATCHING FIX:
                 if (streams.length > 0) {
-                    if (state.isScreenSharing && state.screenStreamId) {
-                        // Agar screen share on hai, toh ID match karo
-                        pScreenStream = streams.find(s => s.id === state.screenStreamId);
-                        pCameraStream = streams.find(s => s.id !== state.screenStreamId) || streams[0];
-                    } else {
-                        // Agar nahi, toh pehli stream camera hai
-                        pCameraStream = streams[0];
-                    }
+                  if (state.isScreenSharing && state.screenStreamId) {
+                    // Agar screen share on hai, toh ID match karo
+                    pScreenStream = streams.find(
+                      (s) => s.id === state.screenStreamId,
+                    );
+                    pCameraStream =
+                      streams.find((s) => s.id !== state.screenStreamId) ||
+                      streams[0];
+                  } else {
+                    // Agar nahi, toh pehli stream camera hai
+                    pCameraStream = streams[0];
+                  }
                 }
 
                 return {

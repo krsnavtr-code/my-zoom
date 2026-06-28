@@ -43,7 +43,7 @@ const Landing = () => {
               </svg>
             </div>
             <span className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 tracking-tight">
-              ZoomClone
+              Connect ClassRoom
             </span>
           </div>
           <div className="flex space-x-3 text-sm">
@@ -148,7 +148,7 @@ const Landing = () => {
 
       {/* Tiny Footer */}
       <footer className="relative z-10 py-4 text-center text-xs text-slate-600 border-t border-white/5 bg-black/20">
-        <p>&copy; 2026 ZoomClone. Protocol active.</p>
+        <p>&copy; 2026 Connect ClassRoom. Protocol active.</p>
       </footer>
     </div>
   );
